@@ -1,0 +1,23 @@
+version: '3.8' # Specifies the version of the Docker Compose file format
+
+services: # Defines the different application parts (services) Docker will manage
+  db: # We're naming our database service 'db'
+    image: postgres:15 # Tells Docker to use the official PostgreSQL software, version 15
+    container_name: awanon_postgres_db # Gives the running container a specific, friendly name
+    restart: always # Automatically restarts the database if it crashes or the system reboots
+    environment: # Sets up internal configuration for the PostgreSQL container
+      POSTGRES_DB: awanon_core # Creates a database named 'awanon_core' inside the container
+      POSTGRES_USER: awanon_user # Creates a user named 'awanon_user' to access the database
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Sets the password for 'awanon_user' - IMPORTANT: reads this from a separate .env file for security
+    volumes:
+      # This saves the actual database data in a persistent 'volume' managed by Docker,
+      # so the data isn't lost if the container is stopped or removed.
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # This connects port 5432 on your Windows computer to port 5432 inside the container.
+      # 5432 is the standard port for PostgreSQL. This allows our Python code to connect.
+      - "5432:5432"
+
+volumes: # Defines the persistent storage volumes
+  postgres_data: # Declares the 'postgres_data' volume we referenced above
+    driver: local # Specifies that Docker should manage this volume locally on your machine
