@@ -1,0 +1,2 @@
+# core backend/tswiqon/requirements.txt
+pika>=1.0.0

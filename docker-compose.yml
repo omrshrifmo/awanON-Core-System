@@ -1,23 +1,79 @@
-version: '3.8' # Specifies the version of the Docker Compose file format
+# docker-compose.yml
+version: '3.8'
 
-services: # Defines the different application parts (services) Docker will manage
-  db: # We're naming our database service 'db'
-    image: postgres:15 # Tells Docker to use the official PostgreSQL software, version 15
-    container_name: awanon_postgres_db # Gives the running container a specific, friendly name
-    restart: always # Automatically restarts the database if it crashes or the system reboots
-    environment: # Sets up internal configuration for the PostgreSQL container
-      POSTGRES_DB: awanon_core # Creates a database named 'awanon_core' inside the container
-      POSTGRES_USER: awanon_user # Creates a user named 'awanon_user' to access the database
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Sets the password for 'awanon_user' - IMPORTANT: reads this from a separate .env file for security
-    volumes:
-      # This saves the actual database data in a persistent 'volume' managed by Docker,
-      # so the data isn't lost if the container is stopped or removed.
-      - postgres_data:/var/lib/postgresql/data
+services:
+  # --- Infrastructure Services ---
+  postgres:
+    image: postgres:15
+    container_name: awanon_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB} # Use variable from .env
+      POSTGRES_USER: ${POSTGRES_USER} # Use variable from .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Use variable from .env
     ports:
-      # This connects port 5432 on your Windows computer to port 5432 inside the container.
-      # 5432 is the standard port for PostgreSQL. This allows our Python code to connect.
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - awanon_network
 
-volumes: # Defines the persistent storage volumes
-  postgres_data: # Declares the 'postgres_data' volume we referenced above
-    driver: local # Specifies that Docker should manage this volume locally on your machine
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: awanon_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Management UI: http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER} # Use variable from .env
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS} # Use variable from .env
+    networks:
+      - awanon_network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: awanon_chromadb
+    ports:
+      - "8000:8000"
+    volumes: # Basic persistence for ChromaDB standalone
+        - chromadb_data:/chroma/.chroma/index # Adjust path based on ChromaDB docs if needed
+    networks:
+      - awanon_network
+
+  # --- Application Services ---
+  bridge:
+    container_name: awanon_bridge
+    build: ./bridge-backend # Points to the bridge-backend directory
+    ports:
+      - "3000:3000" # Bridge API port
+    environment:
+      # Ensure your postgres service name here is 'postgres' or 'db' to match its service definition
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+      PORT: 3000
+      # Add JWT_SECRET etc. later
+    depends_on:
+      - postgres # or 'db'
+      - rabbitmq
+    networks:
+      - awanon_network
+
+  tswiqon: # Our first sample AI company
+    container_name: awanon_ai_tswiqon
+    build: "./core-backend/tswiqon" # Points to the specific AI company folder (use quotes for space)
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+      COMPANY_NAME: TswiqON
+      COMPANY_QUEUE: tswiqon_tasks # Dedicated queue name for this company
+    depends_on:
+      - rabbitmq
+    networks:
+      - awanon_network
+    # Add restart: unless-stopped later for resilience
+
+volumes: # Define named volumes for data persistence
+  postgres_data:
+  chromadb_data:
+
+networks: # Define a custom network for services to communicate
+    awanon_network:
+        driver: bridge
