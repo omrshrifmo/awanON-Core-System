@@ -7,12 +7,22 @@ const db = require('./db'); // Import database query function
 const app = express();
 const port = process.env.PORT || 3000;
 const rabbitmqUrl = process.env.RABBITMQ_URL;
+const databaseUrl = process.env.DATABASE_URL;
 const responseQueue = 'bridge_task_updates_queue';
 
 if (!rabbitmqUrl) {
     console.error("FATAL ERROR: RABBITMQ_URL environment variable is not set.");
     process.exit(1);
 }
+
+if (!databaseUrl) {
+    console.error("FATAL ERROR: DATABASE_URL environment variable is not set.");
+    process.exit(1);
+}
+
+console.log('[Bridge] Environment variables loaded:');
+console.log(`[Bridge] - DATABASE_URL: ${databaseUrl}`);
+console.log(`[Bridge] - RABBITMQ_URL: ${rabbitmqUrl}`);
 
 app.use(express.json());
 
