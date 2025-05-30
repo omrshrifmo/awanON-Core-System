@@ -1,0 +1,24 @@
+# Start from a Python base image
+FROM python:3.9-slim
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the requirements file for the API into the container
+# This will be core-backend/requirements.txt
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application code from core-backend into the container
+# This will include main.py (or app.py)
+COPY . .
+
+# Expose the port the FastAPI app will run on (e.g., 8000, or 80 as used in docker-compose)
+# The docker-compose.yml maps host 3000 to container 80, so FastAPI should run on 80 here.
+EXPOSE 80
+
+# Command to run the FastAPI application using Uvicorn
+# Ensure main.py contains the FastAPI app instance (e.g., app = FastAPI())
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--reload"]
