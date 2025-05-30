@@ -1,79 +1,121 @@
-# docker-compose.yml
 version: '3.8'
 
 services:
-  # --- Infrastructure Services ---
-  postgres:
-    image: postgres:15
-    container_name: awanon_postgres
+  db:
+    image: postgres:13
+    restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB} # Use variable from .env
-      POSTGRES_USER: ${POSTGRES_USER} # Use variable from .env
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Use variable from .env
+      POSTGRES_USER: awanon_user
+      POSTGRES_PASSWORD: awanon_password
+      POSTGRES_DB: awanon_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - awanon_network
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: awanon_rabbitmq
+    restart: always
     ports:
-      - "5672:5672"
-      - "15672:15672" # Management UI: http://localhost:15672
+      - "5672:5672" # For application connections
+      - "15672:15672" # For RabbitMQ Management UI
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER} # Use variable from .env
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS} # Use variable from .env
-    networks:
-      - awanon_network
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
 
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: awanon_chromadb
+  core_api:
+    build:
+      context: ./core-backend
+      dockerfile: Dockerfile.api
+    restart: always
     ports:
-      - "8000:8000"
-    volumes: # Basic persistence for ChromaDB standalone
-        - chromadb_data:/chroma/.chroma/index # Adjust path based on ChromaDB docs if needed
-    networks:
-      - awanon_network
+      - "3000:80" # FastAPI will run on port 80 in the container
+    depends_on:
+      - db
+      - rabbitmq
+    environment:
+      DATABASE_URL: "postgresql://awanon_user:awanon_password@db:5432/awanon_db"
+      RABBITMQ_HOST: "rabbitmq"
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: "user"
+      RABBITMQ_PASS: "password"
+    volumes:
+      - ./core-backend:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./core-backend
+          target: /app
+          ignore:
+            - Dockerfile.api
+            - Dockerfile.bridge
+            - .git
+            - __pycache__
+            - tswiqon/__pycache__
 
-  # --- Application Services ---
+
   bridge:
-    container_name: awanon_bridge
-    build: ./bridge-backend # Points to the bridge-backend directory
-    ports:
-      - "3000:3000" # Bridge API port
-    environment:
-      # Ensure your postgres service name here is 'postgres' or 'db' to match its service definition
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
-      PORT: 3000
-      # Add JWT_SECRET etc. later
+    build:
+      context: ./core-backend
+      dockerfile: Dockerfile.bridge
+    restart: always
     depends_on:
-      - postgres # or 'db'
+      - db
       - rabbitmq
-    networks:
-      - awanon_network
-
-  tswiqon: # Our first sample AI company
-    container_name: awanon_ai_tswiqon
-    build: "./core-backend/tswiqon" # Points to the specific AI company folder (use quotes for space)
     environment:
-      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
-      COMPANY_NAME: TswiqON
-      COMPANY_QUEUE: tswiqon_tasks # Dedicated queue name for this company
+      DATABASE_URL: "postgresql://awanon_user:awanon_password@db:5432/awanon_db"
+      RABBITMQ_HOST: "rabbitmq"
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: "user"
+      RABBITMQ_PASS: "password"
+    volumes:
+      - ./core-backend:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./core-backend
+          target: /app
+          ignore:
+            - Dockerfile.api
+            - Dockerfile.bridge
+            - .git
+            - __pycache__
+            - tswiqon/__pycache__
+
+
+  tswiqon_agent:
+    build:
+      context: ./core-backend/tswiqon
+      dockerfile: Dockerfile.tswiqon
+    restart: always
     depends_on:
       - rabbitmq
-    networks:
-      - awanon_network
-    # Add restart: unless-stopped later for resilience
+    environment:
+      RABBITMQ_HOST: "rabbitmq"
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: "user"
+      RABBITMQ_PASS: "password"
+      LITELLM_MODEL_NAME: "groq/llama3-8b-8192" # Or user-preferred model like "vertex_ai/gemini-pro"
+      # Ensure user provides GROQ_API_KEY or VERTEX_AI_PROJECT/VERTEX_AI_LOCATION etc.
+      # For Groq:
+      GROQ_API_KEY: "${GROQ_API_KEY}" # This tells Docker Compose to use the GROQ_API_KEY from your shell environment or a .env file
+      # For Vertex AI (example, more may be needed):
+      # GOOGLE_APPLICATION_CREDENTIALS: "/app/gcp-credentials.json" # If using a service account key file
+      # VERTEX_AI_PROJECT: "${VERTEX_AI_PROJECT}"
+      # VERTEX_AI_LOCATION: "${VERTEX_AI_LOCATION}"
+    volumes:
+      - ./core-backend/tswiqon:/app
+      # - /path/to/your/local/gcp-credentials.json:/app/gcp-credentials.json # If using Vertex AI with a key file
+    develop:
+      watch:
+        - action: sync
+          path: ./core-backend/tswiqon
+          target: /app
+          ignore:
+            - Dockerfile.tswiqon
+            - .git
+            - __pycache__
 
-volumes: # Define named volumes for data persistence
+
+volumes:
   postgres_data:
-  chromadb_data:
-
-networks: # Define a custom network for services to communicate
-    awanon_network:
-        driver: bridge
