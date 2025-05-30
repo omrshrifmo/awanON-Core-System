@@ -1,2 +1,5 @@
-# core backend/tswiqon/requirements.txt
-pika>=1.0.0
+pika
+litellm  # For Groq, OpenAI, Azure, etc. Add extras if using specific providers like [vertexai]
+pydantic
+python-dotenv # To load .env file if needed, though Docker Compose handles it better for services
+instructor # If choosing to use it with LiteLLM for Pydantic responses
