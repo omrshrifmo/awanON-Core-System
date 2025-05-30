@@ -173,7 +173,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-env/
+#env/
 venv/
 .venv/ # Important for our virtual environment!
 *.ipynb_checkpoints
@@ -186,10 +186,10 @@ Desktop.ini
 $RECYCLE.BIN/
 
 # Secrets - IMPORTANT!
-.env # Add this line if it's not already there!
-*.env
-*.env.*
-!*.env.example # Allows example env files if needed
+#.env # Add this line if it's not already there!
+#*.env
+#*.env.*
+#!*.env.example # Allows example env files if needed
 
 # IDE / Editor Files
 .vscode/
@@ -200,4 +200,4 @@ $RECYCLE.BIN/
 *.sln
 *.sw?
 
-.env
+#.env
