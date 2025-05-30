@@ -1,199 +1,151 @@
-# core backend/tswiqon/listener.py
 import pika
-import time
 import os
 import json
-import sys
-import signal
+import time
+import logging
+from pydantic import ValidationError
+from litellm import completion, BudgetManager # budget_manager for cost tracking (optional)
+from models import CompanyBlueprintV1 # Make sure models.py is in the same directory or PYTHONPATH is set
 
-# --- Configuration ---
-RABBITMQ_URL = os.environ.get('RABBITMQ_URL')
-COMPANY_QUEUE = os.environ.get('COMPANY_QUEUE') # Queue this company listens to
-COMPANY_NAME = os.environ.get('COMPANY_NAME', 'AI_Company')
-RESPONSE_QUEUE = 'bridge_task_updates_queue' # Queue to send responses/updates back to the bridge
+# Setup basic logging
+logging.basicConfig(level=logging.INFO, format='[TswiqON Agent] %(asctime)s - %(levelname)s - %(message)s')
 
-if not RABBITMQ_URL:
-    print(f"[{COMPANY_NAME}] FATAL ERROR: RABBITMQ_URL environment variable is not set.", file=sys.stderr)
-    sys.exit(1)
-if not COMPANY_QUEUE:
-    print(f"[{COMPANY_NAME}] FATAL ERROR: COMPANY_QUEUE environment variable is not set.", file=sys.stderr)
-    sys.exit(1)
+# RabbitMQ connection parameters from environment variables
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
+RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
+RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user')
+RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password')
+credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
 
-connection = None
-consuming_channel = None
-publishing_channel = None
+# LiteLLM Model Configuration
+LITELLM_MODEL_NAME = os.getenv('LITELLM_MODEL_NAME', 'groq/llama3-8b-8192')
+# Optional: Setup a budget manager for LiteLLM if you want to track costs
+# budget_manager = BudgetManager(project_name="awanon_tswiqon")
 
-# --- Graceful Shutdown Handler ---
-def shutdown(signum, frame):
-    global connection, consuming_channel, publishing_channel
-    print(f"\n[{COMPANY_NAME}] Received shutdown signal ({signum}). Closing RabbitMQ resources...")
-    # Stop consuming first
-    if consuming_channel and consuming_channel.is_open:
-        try:
-            consuming_channel.stop_consuming()
-            print(f"[{COMPANY_NAME}] Stopped consuming.")
-        except Exception as e:
-            print(f"[{COMPANY_NAME}] Error stopping consuming: {e}", file=sys.stderr)
-    # Close publishing channel
-    if publishing_channel and publishing_channel.is_open:
-        try:
-            publishing_channel.close()
-            print(f"[{COMPANY_NAME}] Publishing channel closed.")
-        except Exception as e:
-            print(f"[{COMPANY_NAME}] Error closing publishing channel: {e}", file=sys.stderr)
-    # Close connection
-    if connection and connection.is_open:
-        try:
-            connection.close()
-            print(f"[{COMPANY_NAME}] RabbitMQ connection closed.")
-        except Exception as e:
-            print(f"[{COMPANY_NAME}] Error closing connection: {e}", file=sys.stderr)
-    sys.exit(0)
+# Name of the queues for TswiqON agent
+LISTEN_QUEUE_NAME = 'tswiqon_tasks'
+PUBLISH_QUEUE_NAME = 'tswiqon_tasks_results'
 
-signal.signal(signal.SIGTERM, shutdown)
-signal.signal(signal.SIGINT, shutdown)
+def get_llm_response_for_blueprint(task_details_str: str, target_company_name: str) -> (dict, str):
+    """
+    Generates a company blueprint using an LLM, attempting to format the output
+    according to the CompanyBlueprintV1 Pydantic model.
+    """
+    system_prompt = (
+        "You are an expert strategic business consultant AI. Your task is to generate a detailed company blueprint "
+        "based on a given specialization. The output MUST be a valid JSON object that conforms to the "
+        "CompanyBlueprintV1 Pydantic model. Focus on providing creative, actionable, and relevant suggestions."
+        f"The company blueprint is for '{target_company_name}'."
+        "Ensure all required fields are present and adhere to any length or content constraints mentioned in the model schema."
+        "The specialization for the company is: " + task_details_str
+    )
+    
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": f"Generate the company blueprint for a company specializing in: {task_details_str}"}]
 
-# --- Function to Publish Response ---
-def publish_response(task_id, status, details=None, result=None):
-    global connection, publishing_channel # Ensure we use the global vars
-    response_message = {
-        "task_id": task_id,
-        "status_update": status,
-        "details": details,
-        "result": result, # Include result data if any
-        "timestamp": time.time()
-    }
     try:
-        # Ensure channel is available
-        if not publishing_channel or not publishing_channel.is_open:
-            if connection and connection.is_open:
-                publishing_channel = connection.channel()
-                # Declare the response queue here as well (makes publisher robust)
-                publishing_channel.queue_declare(queue=RESPONSE_QUEUE, durable=True)
-                print(f"[{COMPANY_NAME}] Re-established publishing channel.")
-            else:
-                print(f"[{COMPANY_NAME}] Cannot publish response: Connection is not open.", file=sys.stderr)
-                return # Or try reconnecting the whole connection
+        logging.info(f"Sending request to LLM: {LITELLM_MODEL_NAME} for task related to: {task_details_str}")
+        # Using LiteLLM's ability to directly get Pydantic model (for OpenAI-compatible models)
+        # For models that don't directly support 'response_model', we'd parse JSON and validate.
+        # Groq with Llama3 should work well with JSON mode or structured output prompting.
+        
+        # Forcing JSON output if model supports it (many OpenAI-compatible models do)
+        response = completion(
+            model=LITELLM_MODEL_NAME,
+            messages=messages,
+            # For OpenAI models and some others that support it:
+            # response_format={"type": "json_object"}, 
+            # Or if using Instructor with LiteLLM:
+            # response_model=CompanyBlueprintV1,
+            # max_tokens=2000 # Adjust as needed
+        )
+        
+        llm_output_content = response.choices[0].message.content
+        logging.info(f"Raw LLM Output: {llm_output_content[:500]}...") # Log snippet of raw output
 
-        publishing_channel.basic_publish(
-            exchange='',
-            routing_key=RESPONSE_QUEUE,
-            body=json.dumps(response_message),
-            properties=pika.BasicProperties(
-                delivery_mode=2,  # Make message persistent
-            ))
-        print(f"[{COMPANY_NAME}] Published response for task {task_id} to queue '{RESPONSE_QUEUE}': Status={status}")
+        try:
+            # Attempt to parse the LLM string output as JSON
+            blueprint_data = json.loads(llm_output_content)
+            # Validate with Pydantic
+            CompanyBlueprintV1(**blueprint_data) 
+            logging.info(f"Successfully generated and validated blueprint for: {target_company_name}")
+            return blueprint_data, LITELLM_MODEL_NAME
+        except json.JSONDecodeError as e:
+            logging.error(f"JSONDecodeError from LLM output: {e}")
+            logging.error(f"Problematic LLM output snippet: {llm_output_content[:500]}")
+            return {"error": "LLM output was not valid JSON.", "details": str(e), "raw_output": llm_output_content}, LITELLM_MODEL_NAME
+        except ValidationError as e:
+            logging.error(f"Pydantic ValidationError for blueprint: {e}")
+            logging.error(f"Problematic LLM output snippet: {llm_output_content[:500]}")
+            return {"error": "LLM output did not conform to Pydantic model.", "details": str(e.to_json()), "raw_output": llm_output_content}, LITELLM_MODEL_NAME
+
     except Exception as e:
-        print(f"[{COMPANY_NAME}] Error publishing response for task {task_id}: {e}", file=sys.stderr)
-        # Consider error handling - maybe try reconnecting publish channel
+        logging.error(f"Error calling LLM or processing its response: {e}")
+        return {"error": "Failed to get valid response from LLM.", "details": str(e)}, LITELLM_MODEL_NAME
 
-# --- RabbitMQ Message Callback ---
+
 def callback(ch, method, properties, body):
-    print(f"\n[{COMPANY_NAME}] Received message (Delivery Tag: {method.delivery_tag}):")
-    task_id = None # Define task_id outside try block
+    task_data = json.loads(body.decode())
+    task_id = task_data.get('task_id')
+    target_company_name = task_data.get('target_company_name', 'Unnamed AI Company') # Default if not provided
+    details = task_data.get('payload', {}).get('details', "No details provided.")
+
+    logging.info(f"Received task ID: {task_id} for '{target_company_name}' with details: {details}")
+
+    blueprint_result, model_used = get_llm_response_for_blueprint(details, target_company_name)
+
+    result_message = {
+        'task_id': task_id,
+        'status': 'completed_llm_blueprint' if 'error' not in blueprint_result else 'failed_llm_blueprint',
+        'result': {
+            'blueprint': blueprint_result,
+            'model_used': model_used
+        },
+        'target_company_name': target_company_name
+    }
+
     try:
-        message_body_str = body.decode('utf-8')
-        message_data = json.loads(message_body_str)
-        task_id = message_data.get('taskId', 'N/A') # Extract task_id early
-
-        print(f"  Task ID: {task_id}")
-        print(f"  Payload: {message_data.get('payload', 'N/A')}")
-        print(f"  Sent At: {message_data.get('sentAt', 'N/A')}")
-
-        # --- TODO: Replace this print with actual processing logic ---
-        # e.g., parse payload, pass to LangGraph/CEO agent
-        print(f"[{COMPANY_NAME}] Simulating processing for task {task_id}...")
-        # Send "acknowledged" status back immediately
-        publish_response(task_id, f"acknowledged_by_{COMPANY_NAME}", details="Task received, processing started.")
-        time.sleep(2) # Simulate work
-        # --- End TODO ---
-
-        # Simulate completion and send result
-        # In a real scenario, this would happen after agent processing finishes
-        final_result = {"summary": f"Completed work for task {task_id}", "output_file": f"/path/to/result_{task_id}.txt"}
-        publish_response(task_id, "completed_simple", details="Task processing finished.", result=final_result)
-
-
-    except json.JSONDecodeError:
-        print(f"  Error: Could not decode JSON from body.", file=sys.stderr)
-        # Publish failure status if task_id was parsed? Maybe not if format is wrong.
-    except UnicodeDecodeError:
-        print(f"  Error: Could not decode body as UTF-8.", file=sys.stderr)
+        ch.basic_publish(
+            exchange='',
+            routing_key=PUBLISH_QUEUE_NAME,
+            body=json.dumps(result_message, indent=2), # Pretty print for easier debugging in RabbitMQ
+            properties=pika.BasicProperties(delivery_mode=2) # Make message persistent
+        )
+        logging.info(f"Published result for task ID: {task_id} to {PUBLISH_QUEUE_NAME}")
     except Exception as e:
-        print(f"  Error processing message: {e}", file=sys.stderr)
-        # Publish failure status if task_id is available
-        if task_id and task_id != 'N/A':
-            publish_response(task_id, "failed", details=f"Error during processing: {e}")
+        logging.error(f"Failed to publish result for task ID {task_id}: {e}")
 
-    # Acknowledge the original message from the company queue
-    print(f"[{COMPANY_NAME}] Acknowledging original task message {task_id}.")
-    try:
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    except Exception as e:
-        print(f"[{COMPANY_NAME}] Error acknowledging message {task_id}: {e}", file=sys.stderr)
+    ch.basic_ack(delivery_tag=method.delivery_tag)
+    logging.info(f"Acknowledged task ID: {task_id}")
 
 
-# --- Main Connection and Consumption Logic ---
-def main():
-    global connection, consuming_channel, publishing_channel
-    print(f"[{COMPANY_NAME}] Listener starting...")
-    print(f"[{COMPANY_NAME}] Attempting to connect to RabbitMQ at {RABBITMQ_URL}...")
-    parameters = pika.URLParameters(RABBITMQ_URL)
-    connection = None
-    attempts = 0
-    max_attempts = 15
-    wait_time = 5
-
-    # Robust connection loop
-    while attempts < max_attempts:
+def start_listening():
+    while True:
         try:
-            connection = pika.BlockingConnection(parameters)
-            print(f"[{COMPANY_NAME}] Connected to RabbitMQ!")
-            break
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT, credentials=credentials, heartbeart=600, blocked_connection_timeout=300))
+            channel = connection.channel()
+
+            # Declare durable queues
+            channel.queue_declare(queue=LISTEN_QUEUE_NAME, durable=True)
+            channel.queue_declare(queue=PUBLISH_QUEUE_NAME, durable=True)
+            
+            channel.basic_qos(prefetch_count=1) # Process one message at a time
+            channel.basic_consume(queue=LISTEN_QUEUE_NAME, on_message_callback=callback)
+
+            logging.info(f"TswiqON Agent connected to RabbitMQ on host '{RABBITMQ_HOST}'. Waiting for messages on '{LISTEN_QUEUE_NAME}'...")
+            channel.start_consuming()
+        
         except pika.exceptions.AMQPConnectionError as e:
-            attempts += 1
-            print(f"[{COMPANY_NAME}] Connection attempt {attempts}/{max_attempts} failed: {e}. Retrying in {wait_time} seconds...")
-            time.sleep(wait_time)
+            logging.error(f"RabbitMQ connection error: {e}. Retrying in 10 seconds...")
+            time.sleep(10)
         except Exception as e:
-            attempts += 1
-            print(f"[{COMPANY_NAME}] An unexpected error during connection attempt {attempts}/{max_attempts}: {e}. Retrying in {wait_time} seconds...")
-            time.sleep(wait_time)
-
-    if not connection or not connection.is_open:
-        print(f"[{COMPANY_NAME}] Could not connect to RabbitMQ after {max_attempts} attempts. Exiting.", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        # Create separate channels for consuming and publishing if desired, or reuse one carefully
-        consuming_channel = connection.channel()
-        publishing_channel = connection.channel() # Create channel for publishing responses
-
-        # Declare the queue this listener consumes from
-        consuming_channel.queue_declare(queue=COMPANY_QUEUE, durable=True)
-        print(f"[{COMPANY_NAME}] Declared consuming queue '{COMPANY_QUEUE}'.")
-
-        # Declare the queue this listener publishes responses to
-        publishing_channel.queue_declare(queue=RESPONSE_QUEUE, durable=True)
-        print(f"[{COMPANY_NAME}] Declared response queue '{RESPONSE_QUEUE}'.")
-
-        consuming_channel.basic_qos(prefetch_count=1) # Process one message at a time
-        consuming_channel.basic_consume(queue=COMPANY_QUEUE, on_message_callback=callback)
-
-        print(f"[{COMPANY_NAME}] Waiting for messages on queue '{COMPANY_QUEUE}'. To exit press CTRL+C or send SIGTERM")
-        consuming_channel.start_consuming() # This blocks until shutdown
-
-    except Exception as e:
-        print(f"[{COMPANY_NAME}] An error occurred during setup or consumption: {e}", file=sys.stderr)
-    finally:
-        # Cleanup is now handled by the signal handler (shutdown function) mostly
-        print(f"[{COMPANY_NAME}] Exiting main function.")
-        if connection and connection.is_open:
-            try:
-                connection.close()
-                print(f"[{COMPANY_NAME}] Final RabbitMQ connection closed.")
-            except Exception as e:
-                print(f"[{COMPANY_NAME}] Error closing connection in finally: {e}", file=sys.stderr)
+            logging.error(f"An unexpected error occurred in start_listening: {e}. Retrying in 10 seconds...")
+            time.sleep(10)
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        start_listening()
+    except KeyboardInterrupt:
+        logging.info("TswiqON Agent shutting down...")
+    except Exception as e:
+        logging.critical(f"TswiqON Agent failed to start: {e}")
