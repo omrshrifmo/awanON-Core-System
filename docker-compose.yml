@@ -56,31 +56,26 @@ services:
 
   bridge:
     build:
-      context: ./core-backend
-      dockerfile: Dockerfile.bridge
+      context: ./bridge-backend
+      dockerfile: Dockerfile
     restart: always
     depends_on:
       - db
       - rabbitmq
     environment:
       DATABASE_URL: "postgresql://awanon_user:awanon_password@db:5432/awanon_db"
-      RABBITMQ_HOST: "rabbitmq"
-      RABBITMQ_PORT: "5672"
-      RABBITMQ_USER: "user"
-      RABBITMQ_PASS: "password"
+      RABBITMQ_URL: "amqp://user:password@rabbitmq:5672"
     volumes:
-      - ./core-backend:/app
+      - ./bridge-backend:/app
     develop:
       watch:
         - action: sync
-          path: ./core-backend
+          path: ./bridge-backend
           target: /app
           ignore:
-            - Dockerfile.api
-            - Dockerfile.bridge
+            - Dockerfile
             - .git
-            - __pycache__
-            - tswiqon/__pycache__
+            - node_modules
 
 
   tswiqon_agent:
