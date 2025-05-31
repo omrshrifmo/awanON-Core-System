@@ -37,8 +37,14 @@ def get_llm_response_for_blueprint(task_details_str: str, target_company_name: s
         "CompanyBlueprintV1 Pydantic model. Respond with *ONLY* the JSON object and nothing else. "
         "Do not include any markdown formatting like ```json or ``` at the beginning or end. "
         "Do not include any explanatory text or conversation outside of the JSON structure itself. "
-        f"The company blueprint is for '{target_company_name}'."
-        "Ensure all required fields are present and adhere to any length or content constraints mentioned in the model schema."
+        f"The company blueprint is for '{target_company_name}'. "
+        "The JSON must include these exact fields: "
+        "- company_name_suggestion: string (creative name for the AI company) "
+        "- specialization: string (the given specialization) "
+        "- mission_statement_draft: string (at least 20 characters) "
+        "- key_ai_employee_roles: array of objects with role_title, responsibilities (array), and optional reports_to "
+        "- initial_sop_ideas: array of 3-5 strings for Standard Operating Procedures "
+        "- estimated_time_to_operational_setup_days: number (optional) "
         "The specialization for the company is: " + task_details_str
     )
     
@@ -78,7 +84,7 @@ def get_llm_response_for_blueprint(task_details_str: str, target_company_name: s
         except ValidationError as e:
             logging.error(f"Pydantic ValidationError for blueprint: {e}")
             logging.error(f"Problematic LLM output snippet: {llm_output_content[:500]}")
-            return {"error": "LLM output did not conform to Pydantic model.", "details": str(e.to_json()), "raw_output": llm_output_content}, LITELLM_MODEL_NAME
+            return {"error": "LLM output did not conform to Pydantic model.", "details": str(e), "raw_output": llm_output_content}, LITELLM_MODEL_NAME
 
     except Exception as e:
         logging.error(f"Error calling LLM or processing its response: {e}")
