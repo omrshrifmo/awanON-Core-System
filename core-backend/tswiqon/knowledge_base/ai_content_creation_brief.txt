@@ -1,0 +1,16 @@
+Example Brief for an AI Content Creation Company:
+
+Company Specialization: AI-driven blog post and social media content generation.
+Target Audience: Small to medium-sized businesses (SMBs) looking for affordable, high-quality content.
+Key Services:
+- Blog post writing (various lengths and topics).
+- Social media updates (Twitter, LinkedIn, Facebook).
+- Content idea generation.
+- Basic SEO optimization of content.
+Value Proposition: Fast, scalable, and cost-effective content creation to boost online presence.
+Core AI Roles to Consider:
+- Chief Content Strategist AI (oversees content plans, quality).
+- AI Writing Agent (specialized in different content types).
+- SEO Analyst AI (optimizes content).
+- Client Liason AI (handles communication and revisions).
+Initial SOPs: Task intake from client, content generation workflow, QA checklist, client feedback loop.

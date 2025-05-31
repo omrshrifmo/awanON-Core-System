@@ -1,0 +1,16 @@
+Standard Operating Procedure (SOP) Template: General Business Operations
+
+1. SOP Title: [Clearly define the process]
+2. Purpose: [Explain why this SOP is necessary]
+3. Scope: [Define what this SOP covers and does not cover]
+4. Responsibilities: [List roles and their specific duties in this process]
+5. Procedure Steps:
+   5.1. Step 1: [Detailed action]
+   5.2. Step 2: [Detailed action]
+   5.3. Step 3: [Detailed action]
+   ...
+6. Metrics/Performance Indicators: [How to measure success/compliance]
+7. References: [Link to other relevant documents/SOPs]
+8. Revision History: [Track changes to this SOP]
+
+Key Principle: All AI employees should adhere to defined SOPs to ensure consistency and quality. For a new AI company, initial SOPs should focus on core service delivery, task intake, quality assurance, and client communication.

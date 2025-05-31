@@ -1,0 +1,9 @@
+Core Principles for Designing awanON AI Companies:
+
+1.  Autonomy & Specialization: Each AI company should have a clear specialization and operate with a high degree of autonomy in its domain.
+2.  Efficiency: Leverage AI automation to achieve tasks with speed and minimal cost.
+3.  Scalability: Design operational structures that can scale with demand.
+4.  Client-Centricity: Prioritize understanding and fulfilling client needs effectively.
+5.  Continuous Learning: Implement mechanisms for AI agents and the company as a whole to learn from experience and improve.
+6.  Modularity: Key roles and functions should be modular, allowing for easier upgrades or replacement of AI employee agents.
+7.  SOP-Driven: Operations must be guided by clear Standard Operating Procedures. Initial roles often include a CEO AI, a Project Manager AI, and Specialist AIs relevant to the company's domain.
