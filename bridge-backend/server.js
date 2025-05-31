@@ -8,7 +8,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const rabbitmqUrl = process.env.RABBITMQ_URL;
 const databaseUrl = process.env.DATABASE_URL;
-const responseQueue = 'bridge_task_updates_queue';
+const responseQueue = 'tswiqon_tasks_results';
 
 if (!rabbitmqUrl) {
     console.error("FATAL ERROR: RABBITMQ_URL environment variable is not set.");
@@ -165,29 +165,43 @@ while (true) {
                       parsedTaskId = responseData?.task_id; // Get task_id early
                     console.log(` Content:`, responseData);
 
-                    const { status_update, details, result } = responseData;
+                    const { status, details, result } = responseData;
 
-                    if (!parsedTaskId || !status_update) {
-                        throw new Error('Invalid response format, missing task_id or status_update.');
+                    if (!parsedTaskId || !status) {
+                        throw new Error('Invalid response format, missing task_id or status.');
                     }
 
                       // Update Task in Database
-                    console.log(`[MQ Listener] Updating task <span class="math-inline">\{parsedTaskId\} status to '</span>{status_update}'`);
+                    console.log(`[MQ Listener] Updating task ${parsedTaskId} status to '${status}'`);
                     const updateQuery = `
-                        UPDATE Tasks
+                        UPDATE tasks
                         SET status = $1, result = $2, updated_at = NOW()
                         WHERE task_id = $3
                         RETURNING task_id;
                     `;
                     const resultPayload = result || (details ? { info: details } : null);
-                    const dbResult = await db.query(updateQuery, [status_update, resultPayload, parsedTaskId]);
+                    console.log(`[DEBUG] Updating task ${parsedTaskId} with status: ${status}`);
+                    console.log(`[DEBUG] Result payload type: ${typeof resultPayload}`);
+                    console.log(`[DEBUG] Result payload size: ${JSON.stringify(resultPayload).length} chars`);
+                    
+                    // Convert to JSON string for PostgreSQL JSONB
+                    const jsonPayload = resultPayload ? JSON.stringify(resultPayload) : null;
+                    console.log(`[DEBUG] JSON payload length: ${jsonPayload ? jsonPayload.length : 0} chars`);
+                    
+                    try {
+                        const dbResult = await db.query(updateQuery, [status, jsonPayload, parsedTaskId]);
+                        console.log(`[DEBUG] Query result:`, dbResult);
 
-                    if (dbResult.rowCount > 0) {
-                        console.log(`[MQ Listener] Task ${parsedTaskId} updated successfully in DB.`);
-                          channel.ack(msg); // Acknowledge message processing
-                    } else {
-                        console.warn(`[MQ Listener] Task ${parsedTaskId} not found in DB for update.`);
-                          channel.nack(msg, false, false); // Reject message if task not found
+                        if (dbResult.rowCount > 0) {
+                            console.log(`[MQ Listener] Task ${parsedTaskId} updated successfully in DB.`);
+                              channel.ack(msg); // Acknowledge message processing
+                        } else {
+                            console.warn(`[MQ Listener] Task ${parsedTaskId} not found in DB for update.`);
+                              channel.nack(msg, false, false); // Reject message if task not found
+                        }
+                    } catch (dbError) {
+                        console.error(`[DB ERROR] Failed to update task ${parsedTaskId}:`, dbError);
+                        channel.nack(msg, false, false); // Reject message on DB error
                     }
 
                 } catch (error) {

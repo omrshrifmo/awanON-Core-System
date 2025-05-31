@@ -5,9 +5,9 @@ services:
     image: postgres:13
     restart: always
     environment:
-      POSTGRES_USER: awanon_user
-      POSTGRES_PASSWORD: awanon_password
-      POSTGRES_DB: awanon_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -20,8 +20,8 @@ services:
       - "5672:5672" # For application connections
       - "15672:15672" # For RabbitMQ Management UI
     environment:
-      RABBITMQ_DEFAULT_USER: user
-      RABBITMQ_DEFAULT_PASS: password
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
 
   core_api:
     build:
@@ -34,11 +34,11 @@ services:
       - db
       - rabbitmq
     environment:
-      DATABASE_URL: "postgresql://awanon_user:awanon_password@db:5432/awanon_db"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
       RABBITMQ_HOST: "rabbitmq"
       RABBITMQ_PORT: "5672"
-      RABBITMQ_USER: "user"
-      RABBITMQ_PASS: "password"
+      RABBITMQ_USER: "${RABBITMQ_DEFAULT_USER}"
+      RABBITMQ_PASS: "${RABBITMQ_DEFAULT_PASS}"
     volumes:
       - ./core-backend:/app
     develop:
@@ -63,8 +63,8 @@ services:
       - db
       - rabbitmq
     environment:
-      DATABASE_URL: "postgresql://awanon_user:awanon_password@db:5432/awanon_db"
-      RABBITMQ_URL: "amqp://user:password@rabbitmq:5672"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+      RABBITMQ_URL: "amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672"
     volumes:
       - ./bridge-backend:/app
     develop:
@@ -88,9 +88,9 @@ services:
     environment:
       RABBITMQ_HOST: "rabbitmq"
       RABBITMQ_PORT: "5672"
-      RABBITMQ_USER: "user"
-      RABBITMQ_PASS: "password"
-      LITELLM_MODEL_NAME: "groq/llama3-8b-8192" # Or user-preferred model like "vertex_ai/gemini-pro"
+      RABBITMQ_USER: "${RABBITMQ_DEFAULT_USER}"
+      RABBITMQ_PASS: "${RABBITMQ_DEFAULT_PASS}"
+      LITELLM_MODEL_NAME: "${LITELLM_MODEL_NAME}" # Or user-preferred model like "vertex_ai/gemini-pro"
       # Ensure user provides GROQ_API_KEY or VERTEX_AI_PROJECT/VERTEX_AI_LOCATION etc.
       # For Groq:
       GROQ_API_KEY: "${GROQ_API_KEY}" # This tells Docker Compose to use the GROQ_API_KEY from your shell environment or a .env file

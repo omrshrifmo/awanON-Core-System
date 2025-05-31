@@ -121,7 +121,7 @@ def callback(ch, method, properties, body):
 def start_listening():
     while True:
         try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT, credentials=credentials, heartbeart=600, blocked_connection_timeout=300))
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT, credentials=credentials, heartbeat=600, blocked_connection_timeout=300))
             channel = connection.channel()
 
             # Declare durable queues
