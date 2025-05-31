@@ -1,7 +1,11 @@
 // frontend/src/apiService.ts
 
-const CORE_API_URL = 'http://localhost:3000/api/v1';
-const BRIDGE_API_URL = 'http://localhost:3001/api/v1';
+// Read from Vite environment variables, with fallbacks for local development
+const CORE_API_BASE_URL = import.meta.env.VITE_CORE_API_URL || 'http://localhost:3000';
+const BRIDGE_API_BASE_URL = import.meta.env.VITE_BRIDGE_API_URL || 'http://localhost:3001';
+
+export const CORE_API_URL = `${CORE_API_BASE_URL}/api/v1`;
+export const BRIDGE_API_URL = `${BRIDGE_API_BASE_URL}/api/v1`;
 
 // Types for API responses
 export interface UserRegistrationData {

@@ -12,15 +12,43 @@ import rag_utils # RAG utilities for document ingestion and retrieval
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='[TswiqON Agent] %(asctime)s - %(levelname)s - %(message)s')
 
-# RabbitMQ connection parameters from environment variables
-RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
-RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
-RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user')
-RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password')
+# RabbitMQ Configuration
+RABBITMQ_URL = os.getenv('RABBITMQ_URL')
+if RABBITMQ_URL:
+    from urllib.parse import urlparse
+    parsed_url = urlparse(RABBITMQ_URL)
+    RABBITMQ_HOST = parsed_url.hostname or 'localhost'
+    RABBITMQ_PORT = parsed_url.port or 5672
+    RABBITMQ_USER = parsed_url.username or 'user'
+    RABBITMQ_PASS = parsed_url.password or 'password'
+    # Ensure RABBITMQ_PORT is an integer
+    if isinstance(RABBITMQ_PORT, str):
+        RABBITMQ_PORT = int(RABBITMQ_PORT)
+    logging.info(f"Connecting to RabbitMQ using URL: {RABBITMQ_HOST}:{RABBITMQ_PORT}")
+else:
+    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
+    RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
+    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user')
+    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password')
+    logging.info(f"Connecting to RabbitMQ using individual env vars: {RABBITMQ_HOST}:{RABBITMQ_PORT}")
+
 credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
 
 # LiteLLM Model Configuration
 LITELLM_MODEL_NAME = os.getenv('LITELLM_MODEL_NAME', 'groq/llama3-8b-8192')
+logging.info(f"Using LiteLLM model: {LITELLM_MODEL_NAME}")
+# Note: LiteLLM expects API keys (e.g., GROQ_API_KEY, OPENAI_API_KEY) to be set as environment variables.
+# This script doesn't handle them directly but relies on LiteLLM's internal environment variable loading.
+# Ensure GROQ_API_KEY is set in the environment if using a Groq model.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") # Explicitly get it for logging or other direct use if needed.
+if "groq" in LITELLM_MODEL_NAME.lower() and not GROQ_API_KEY:
+    logging.warning("LITELLM_MODEL_NAME indicates Groq, but GROQ_API_KEY is not set in the environment.")
+elif not GROQ_API_KEY and "groq" not in LITELLM_MODEL_NAME.lower():
+    logging.info("GROQ_API_KEY is not set, which is expected if not using a Groq model.")
+else:
+    logging.info("GROQ_API_KEY is set.")
+
+
 # Optional: Setup a budget manager for LiteLLM if you want to track costs
 # budget_manager = BudgetManager(project_name="awanon_tswiqon")
 

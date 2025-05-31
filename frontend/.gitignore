@@ -10,7 +10,21 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-*.local
+#*.local # This is too broad and might conflict with specific .env files. Replaced by specific .env patterns.
+
+# Environment variable files
+.env
+.env.*
+!.env.example
+!.env.template
+.env.local
+.env.development
+.env.test
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+
 
 # Editor directories and files
 .vscode/*

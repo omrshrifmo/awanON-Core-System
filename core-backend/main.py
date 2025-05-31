@@ -25,10 +25,23 @@ import auth_utils
 logging.basicConfig(level=logging.INFO, format='[CoreAPI] %(asctime)s - %(levelname)s - %(message)s')
 
 # RabbitMQ Configuration from Environment Variables
-RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
-RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user')
-RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password')
+RABBITMQ_URL = os.getenv('RABBITMQ_URL')
+if RABBITMQ_URL:
+    from urllib.parse import urlparse
+    parsed_url = urlparse(RABBITMQ_URL)
+    RABBITMQ_HOST = parsed_url.hostname or 'rabbitmq'
+    RABBITMQ_PORT = parsed_url.port or 5672
+    RABBITMQ_USER = parsed_url.username or 'user'
+    RABBITMQ_PASS = parsed_url.password or 'password'
+    # Ensure RABBITMQ_PORT is an integer
+    if isinstance(RABBITMQ_PORT, str):
+        RABBITMQ_PORT = int(RABBITMQ_PORT)
+else:
+    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
+    RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
+    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user')
+    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password')
+
 TARGET_QUEUES = {
     "tswiqon": "tswiqon_tasks"  # Map target company name to its specific queue
     # Add other AI company queues here as they are created
@@ -43,6 +56,14 @@ if DATABASE_URL:
     logging.info("Database tables created/verified successfully.")
 else:
     logging.warning("DATABASE_URL not set. Database functionality will be disabled.")
+
+# JWT Secret Key for token generation (typically in auth_utils, but good to ensure it's loaded)
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    logging.warning("JWT_SECRET_KEY is not set. This is required for authentication.")
+    # Potentially raise an error or exit if JWT is critical for startup
+    # raise RuntimeError("JWT_SECRET_KEY must be set in the environment for the application to start.")
+
 
 # --- FastAPI Application Instance ---
 app = FastAPI(
