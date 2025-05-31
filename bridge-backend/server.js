@@ -66,7 +66,7 @@ app.post('/api/v1/tasks/:companyName', async (req, res) => {
     try {
         // 1. Save task to Database
         const insertQuery = `
-        INSERT INTO Tasks (task_id, target_company_name, status, payload)
+        INSERT INTO core_tasks (task_id, target_company_name, status, details)
         VALUES ($1, $2, $3, $4)
         RETURNING *;
         `;
@@ -76,7 +76,7 @@ app.post('/api/v1/tasks/:companyName', async (req, res) => {
         console.log(`[Bridge] Task ${taskId} saved to DB as 'dispatched'.`);
 
         // 2. Prepare & Publish message to RabbitMQ
-        const message = { taskId: createdTask.task_id, payload: createdTask.payload, sentAt: new Date().toISOString() };
+        const message = { taskId: createdTask.task_id, payload: createdTask.details, sentAt: new Date().toISOString() };
         mq = await getMqChannel(); // Get channel and connection
         await mq.channel.assertQueue(targetQueueName, { durable: true });
         mq.channel.sendToQueue(targetQueueName, Buffer.from(JSON.stringify(message)), { persistent: true });
@@ -101,7 +101,7 @@ app.get('/api/v1/tasks/:taskId', async (req, res) => {
     const { taskId } = req.params;
     console.log(`[Bridge] GET /tasks/${taskId}`);
     try {
-        const query = 'SELECT * FROM Tasks WHERE task_id = $1;';
+        const query = 'SELECT * FROM core_tasks WHERE task_id = $1;';
         const result = await db.query(query, [taskId]);
 
         if (result.rows.length === 0) {
@@ -119,7 +119,7 @@ app.get('/api/v1/tasks', async (req, res) => {
     console.log(`[Bridge] GET /tasks`);
     // TODO: Add filtering (req.query.status, req.query.companyName) and pagination later
     try {
-        const query = 'SELECT * FROM Tasks ORDER BY created_at DESC;'; // Simple list, newest first
+        const query = 'SELECT * FROM core_tasks ORDER BY created_at DESC;'; // Simple list, newest first
         const result = await db.query(query);
         res.status(200).send({ status: 'Success', tasks: result.rows });
     } catch (error) {
@@ -174,12 +174,12 @@ while (true) {
                       // Upsert Task in Database (INSERT or UPDATE)
                     console.log(`[MQ Listener] Upserting task ${parsedTaskId} with status '${status}'`);
                     const upsertQuery = `
-                        INSERT INTO tasks (task_id, status, result, created_at, updated_at)
-                        VALUES ($1, $2, $3, NOW(), NOW())
+                        INSERT INTO core_tasks (task_id, target_company_name, status, details)
+                        VALUES ($1, 'unknown', $2, $3)
                         ON CONFLICT (task_id) 
                         DO UPDATE SET 
                             status = EXCLUDED.status,
-                            result = EXCLUDED.result,
+                            details = EXCLUDED.details,
                             updated_at = NOW()
                         RETURNING task_id, status;
                     `;
