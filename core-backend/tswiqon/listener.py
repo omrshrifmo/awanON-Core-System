@@ -6,6 +6,7 @@ import logging
 from pydantic import ValidationError
 from litellm import completion, BudgetManager # budget_manager for cost tracking (optional)
 from models import CompanyBlueprintV1 # Make sure models.py is in the same directory or PYTHONPATH is set
+from agent_workflow import run_agent_workflow
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='[TswiqON Agent] %(asctime)s - %(levelname)s - %(message)s')
@@ -99,14 +100,15 @@ def callback(ch, method, properties, body):
 
     logging.info(f"Received task ID: {task_id} for '{target_company_name}' with details: {details}")
 
-    blueprint_result, model_used = get_llm_response_for_blueprint(details, target_company_name)
+    # Use LangGraph workflow instead of single LLM call
+    blueprint_result = run_agent_workflow(details, target_company_name, LITELLM_MODEL_NAME)
 
     result_message = {
         'task_id': task_id,
-        'status': 'completed_llm_blueprint' if 'error' not in blueprint_result else 'failed_llm_blueprint',
+        'status': 'completed_langgraph_blueprint' if 'error' not in blueprint_result else 'failed_langgraph_blueprint',
         'result': {
-            'blueprint': blueprint_result,
-            'model_used': model_used
+            **blueprint_result,
+            'model_used': LITELLM_MODEL_NAME
         },
         'target_company_name': target_company_name
     }
