@@ -13,6 +13,7 @@ import {
   TaskResult,
   UserRegistrationResponse 
 } from './apiService'
+import BlueprintDisplay from './components/BlueprintDisplay'
 
 function App() {
   // Task-related state
@@ -470,44 +471,59 @@ function App() {
 
           {parsedBlueprint?.blueprint && (
             <div style={{ marginTop: '20px' }}>
-              <h3>🏢 Generated Company Blueprint</h3>
-              <div style={{ 
-                backgroundColor: 'white', 
-                padding: '15px', 
-                borderRadius: '4px', 
-                border: '1px solid #ccc'
+              <h3 style={{ 
+                color: '#495057', 
+                fontSize: '24px', 
+                fontWeight: 'bold', 
+                margin: '0 0 20px 0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
               }}>
-                <h4>📝 Company Overview</h4>
-                <p><strong>Company Name:</strong> {parsedBlueprint.blueprint.company_name_suggestion}</p>
-                <p><strong>Specialization:</strong> {parsedBlueprint.blueprint.specialization}</p>
-                <p><strong>Mission Statement:</strong> {parsedBlueprint.blueprint.mission_statement_draft}</p>
-                <p><strong>Setup Time:</strong> {parsedBlueprint.blueprint.estimated_time_to_operational_setup_days} days</p>
-
-                <h4>👥 Key AI Employee Roles</h4>
-                <ul>
-                  {parsedBlueprint.blueprint.key_ai_employee_roles.map((role, index) => (
-                    <li key={index} style={{ marginBottom: '10px' }}>
-                      <strong>{role.role_title}</strong> (Reports to: {role.reports_to})
-                      <ul style={{ marginTop: '5px' }}>
-                        {role.responsibilities.map((resp, respIndex) => (
-                          <li key={respIndex}>{resp}</li>
-                        ))}
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
-
-                <h4>📋 Initial SOP Ideas</h4>
-                <ul>
-                  {parsedBlueprint.blueprint.initial_sop_ideas.map((sop, index) => (
-                    <li key={index}>{sop}</li>
-                  ))}
-                </ul>
-
-                <h4>🔧 Technical Details</h4>
-                <p><strong>Model Used:</strong> {parsedBlueprint.model_used}</p>
-                <p><strong>Workflow Type:</strong> {parsedBlueprint.workflow_type}</p>
-                <p><strong>Validation Status:</strong> {parsedBlueprint.validation_result.status} - {parsedBlueprint.validation_result.message}</p>
+                🏢 Generated Company Blueprint
+              </h3>
+              
+              <BlueprintDisplay blueprint={parsedBlueprint.blueprint} />
+              
+              {/* Technical Details Section */}
+              <div style={{ 
+                marginTop: '20px',
+                backgroundColor: '#f8f9fa', 
+                padding: '20px', 
+                borderRadius: '8px',
+                border: '1px solid #dee2e6'
+              }}>
+                <h4 style={{ 
+                  color: '#495057', 
+                  fontSize: '18px', 
+                  fontWeight: 'bold', 
+                  margin: '0 0 15px 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🔧 Technical Details
+                </h4>
+                <div style={{ 
+                  display: 'grid', 
+                  gap: '10px',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'
+                }}>
+                  <div>
+                    <strong style={{ color: '#6c757d', fontSize: '14px' }}>Model Used:</strong>
+                    <p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.model_used}</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#6c757d', fontSize: '14px' }}>Workflow Type:</strong>
+                    <p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.workflow_type}</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#6c757d', fontSize: '14px' }}>Validation Status:</strong>
+                    <p style={{ margin: '4px 0 0 0', color: '#495057' }}>
+                      {parsedBlueprint.validation_result.status} - {parsedBlueprint.validation_result.message}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
