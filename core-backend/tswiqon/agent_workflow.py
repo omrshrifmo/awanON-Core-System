@@ -209,25 +209,47 @@ def validate_output(state: AgentState) -> AgentState:
         
     refined_blueprint = state.get('refined_blueprint', {})
     
-    # Enhanced system prompt for final validation and completion
+    # Enhanced system prompt for final validation and completion with explicit field requirements
     system_prompt = (
-        "You are a final validation AI. Ensure the provided blueprint is complete and valid. "
+        "You are a final validation AI. Create a complete and valid company blueprint JSON. "
         "The output MUST be a valid JSON object that perfectly conforms to the CompanyBlueprintV1 model. "
         "Respond with *ONLY* the complete JSON object and nothing else. "
         "Do not include any markdown formatting like ```json or ``` at the beginning or end. "
-        "CRITICAL: Ensure ALL required fields are present: "
-        "- company_name_suggestion: string (must be present) "
-        "- specialization: string (must be present) "
-        "- mission_statement_draft: string (must be at least 20 characters) "
-        "- key_ai_employee_roles: array of objects, each with role_title (string), responsibilities (array of strings), and optional reports_to (string) "
-        "- initial_sop_ideas: array of 3-5 strings "
-        "- estimated_time_to_operational_setup_days: number (optional but recommended) "
-        "If any field is missing or incomplete, generate appropriate content for it."
+        "Do not include any explanatory text or conversation outside of the JSON structure itself. "
+        
+        "CRITICAL: The JSON must contain ALL these exact fields: "
+        "1. company_name_suggestion: string (creative name for the AI company) "
+        "2. specialization: string (the business specialization from the task) "
+        "3. mission_statement_draft: string (meaningful mission statement, minimum 20 characters) "
+        "4. key_ai_employee_roles: array of 2-5 objects, each with: "
+        "   - role_title: string (job title) "
+        "   - responsibilities: array of strings (2-4 responsibilities) "
+        "   - reports_to: string or null (who they report to) "
+        "5. initial_sop_ideas: array of 3-5 strings (Standard Operating Procedure ideas) "
+        "6. estimated_time_to_operational_setup_days: number (days to setup, optional but recommended) "
+        
+        "Example structure: "
+        "{"
+        "  \"company_name_suggestion\": \"AI Solutions Corp\", "
+        "  \"specialization\": \"AI-powered legal document review\", "
+        "  \"mission_statement_draft\": \"To revolutionize legal document review through advanced AI technology\", "
+        "  \"key_ai_employee_roles\": ["
+        "    {"
+        "      \"role_title\": \"AI Legal Analyst\", "
+        "      \"responsibilities\": [\"Review legal documents\", \"Ensure compliance\"], "
+        "      \"reports_to\": \"Chief Legal Officer\""
+        "    }"
+        "  ], "
+        "  \"initial_sop_ideas\": [\"Document intake process\", \"Quality assurance protocol\"], "
+        "  \"estimated_time_to_operational_setup_days\": 30"
+        "}"
     )
+    
+    task_context = f"Task: {state['task_details']}\nTarget Company: {state['target_company_name']}"
     
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Validate and complete this blueprint: {json.dumps(refined_blueprint)}"}
+        {"role": "user", "content": f"Create a complete blueprint based on: {task_context}\n\nRefine this existing blueprint: {json.dumps(refined_blueprint)}"}
     ]
     
     try:
@@ -242,14 +264,68 @@ def validate_output(state: AgentState) -> AgentState:
         # Validate against Pydantic model
         try:
             validated_blueprint = CompanyBlueprintV1(**final_blueprint)
-            state['final_blueprint'] = final_blueprint
+            state['final_blueprint'] = validated_blueprint.model_dump()
             state['validation_result'] = {"status": "success", "message": "Blueprint validated successfully"}
             logging.info("Blueprint validation successful")
             
         except ValidationError as e:
             logging.error(f"Pydantic validation failed: {e}")
-            state['validation_result'] = {"status": "failed", "message": str(e), "blueprint": final_blueprint}
-            state['error'] = f"Validation failed: {str(e)}"
+            
+            # Try to fix common validation issues programmatically
+            fixed_blueprint = final_blueprint.copy()
+            
+            # Ensure required fields exist with proper defaults
+            if 'company_name_suggestion' not in fixed_blueprint or not fixed_blueprint['company_name_suggestion']:
+                fixed_blueprint['company_name_suggestion'] = f"AI Solutions for {state['task_details'][:50]}"
+            
+            if 'specialization' not in fixed_blueprint or not fixed_blueprint['specialization']:
+                fixed_blueprint['specialization'] = state['task_details']
+                
+            if 'mission_statement_draft' not in fixed_blueprint or len(fixed_blueprint.get('mission_statement_draft', '')) < 20:
+                fixed_blueprint['mission_statement_draft'] = f"To revolutionize {state['task_details']} through innovative AI solutions that deliver exceptional value to our clients and transform the industry."
+                
+            if 'key_ai_employee_roles' not in fixed_blueprint or not isinstance(fixed_blueprint.get('key_ai_employee_roles'), list) or len(fixed_blueprint.get('key_ai_employee_roles', [])) == 0:
+                fixed_blueprint['key_ai_employee_roles'] = [
+                    {
+                        "role_title": "AI Solutions Architect",
+                        "responsibilities": ["Design AI system architecture", "Oversee technical implementation", "Ensure scalability and performance"],
+                        "reports_to": "Chief Technology Officer"
+                    },
+                    {
+                        "role_title": "AI Operations Manager",
+                        "responsibilities": ["Manage daily AI operations", "Ensure quality standards", "Coordinate with client teams"],
+                        "reports_to": "AI Solutions Architect"
+                    },
+                    {
+                        "role_title": "AI Data Specialist",
+                        "responsibilities": ["Manage data pipelines", "Ensure data quality", "Implement data governance"],
+                        "reports_to": "AI Solutions Architect"
+                    }
+                ]
+                
+            if 'initial_sop_ideas' not in fixed_blueprint or not isinstance(fixed_blueprint.get('initial_sop_ideas'), list) or len(fixed_blueprint.get('initial_sop_ideas', [])) < 3:
+                fixed_blueprint['initial_sop_ideas'] = [
+                    "SOP for Client Onboarding and Requirements Gathering",
+                    "SOP for AI Model Development and Testing",
+                    "SOP for Quality Assurance and Validation",
+                    "SOP for Client Delivery and Support",
+                    "SOP for Data Security and Privacy Compliance"
+                ]
+            
+            if 'estimated_time_to_operational_setup_days' not in fixed_blueprint:
+                fixed_blueprint['estimated_time_to_operational_setup_days'] = 30
+            
+            try:
+                # Try validation again with fixed blueprint
+                validated_blueprint = CompanyBlueprintV1(**fixed_blueprint)
+                state['final_blueprint'] = validated_blueprint.model_dump()
+                state['validation_result'] = {"status": "success_with_fixes", "message": "Blueprint validated after automatic fixes", "original_error": str(e)}
+                logging.info("Blueprint validation successful after automatic fixes")
+                
+            except ValidationError as e2:
+                logging.error(f"Validation failed even after fixes: {e2}")
+                state['validation_result'] = {"status": "failed", "message": str(e2), "blueprint": fixed_blueprint, "original_error": str(e)}
+                state['error'] = f"Validation failed: {str(e2)}"
             
     except Exception as e:
         logging.error(f"Error in validate_output: {e}")
