@@ -41,17 +41,6 @@ services:
       RABBITMQ_PASS: "${RABBITMQ_DEFAULT_PASS}"
     volumes:
       - ./core-backend:/app
-    develop:
-      watch:
-        - action: sync
-          path: ./core-backend
-          target: /app
-          ignore:
-            - Dockerfile.api
-            - Dockerfile.bridge
-            - .git
-            - __pycache__
-            - tswiqon/__pycache__
 
 
   bridge:
@@ -69,15 +58,6 @@ services:
       RABBITMQ_URL: "amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672"
     volumes:
       - ./bridge-backend:/app
-    develop:
-      watch:
-        - action: sync
-          path: ./bridge-backend
-          target: /app
-          ignore:
-            - Dockerfile
-            - .git
-            - node_modules
 
 
   tswiqon_agent:
@@ -103,15 +83,6 @@ services:
     volumes:
       - ./core-backend/tswiqon:/app
       # - /path/to/your/local/gcp-credentials.json:/app/gcp-credentials.json # If using Vertex AI with a key file
-    develop:
-      watch:
-        - action: sync
-          path: ./core-backend/tswiqon
-          target: /app
-          ignore:
-            - Dockerfile.tswiqon
-            - .git
-            - __pycache__
 
 
 volumes:
