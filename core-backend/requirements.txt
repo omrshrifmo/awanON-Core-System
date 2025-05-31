@@ -7,4 +7,5 @@ psycopg2-binary
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart 
-# For form data, if needed for API endpoints later
+email-validator
+# For form data and email validation

@@ -3,7 +3,7 @@ Pydantic schemas for core_api request/response models.
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 
 class TaskCreationPayload(BaseModel):
@@ -36,3 +36,33 @@ class CoreTaskResponse(BaseModel):
 class HealthCheckResponse(BaseModel):
     """Health check response."""
     status: str = "OK"
+
+
+# --- Authentication Schemas ---
+class UserCreate(BaseModel):
+    """Request payload for user registration."""
+    username: str = Field(..., min_length=3, description="Username (minimum 3 characters)")
+    email: Optional[EmailStr] = Field(None, description="Optional email address")
+    password: str = Field(..., min_length=6, description="Password (minimum 6 characters)")
+
+
+class UserResponse(BaseModel):
+    """Response model for user data."""
+    id: int
+    username: str
+    email: Optional[EmailStr] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True  # For SQLAlchemy model compatibility
+
+
+class Token(BaseModel):
+    """JWT token response."""
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    """Token payload data."""
+    username: Optional[str] = None

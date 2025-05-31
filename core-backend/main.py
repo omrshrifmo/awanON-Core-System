@@ -3,16 +3,22 @@ import json
 import uuid
 import logging
 import pika
-from fastapi import FastAPI, HTTPException, BackgroundTasks, status, Request, Depends
+from datetime import timedelta
+from fastapi import FastAPI, HTTPException, BackgroundTasks, status, Request, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
 
 # Import our database and model components
 from database import engine, get_db
-from models import Base, CoreTask
-from schemas import TaskCreationPayload, TaskCreationResponse, CoreTaskResponse, HealthCheckResponse
+from models import Base, CoreTask, User
+from schemas import (
+    TaskCreationPayload, TaskCreationResponse, CoreTaskResponse, HealthCheckResponse,
+    UserCreate, UserResponse, Token
+)
 import crud
+import auth_utils
 
 # --- Configuration ---
 # Basic Logging Setup
@@ -53,6 +59,48 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Authentication Router ---
+auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+@auth_router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    """
+    Register a new user account.
+    """
+    # Check if username already exists
+    db_user_by_username = crud.get_user_by_username(db, username=user.username)
+    if db_user_by_username:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    
+    # Check if email already exists (if provided)
+    if user.email:
+        db_user_by_email = crud.get_user_by_email(db, email=user.email)
+        if db_user_by_email:
+            raise HTTPException(status_code=400, detail="Email already registered")
+    
+    return crud.create_user(db=db, user=user)
+
+@auth_router.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """
+    Login endpoint to obtain JWT access token.
+    """
+    user = crud.get_user_by_username(db, username=form_data.username)
+    if not user or not auth_utils.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=auth_utils.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = auth_utils.create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+# Include the authentication router
+app.include_router(auth_router)
 
 # --- RabbitMQ Connection Helper ---
 def get_rabbitmq_connection_params():
@@ -111,7 +159,12 @@ async def health_check():
             response_model=TaskCreationResponse, 
             status_code=status.HTTP_202_ACCEPTED,
             tags=["Tasks"])
-async def create_task(payload: TaskCreationPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def create_task(
+    payload: TaskCreationPayload, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_utils.get_current_user)
+):
     """
     Creates a new task and dispatches it to the appropriate AI company service via RabbitMQ.
     
@@ -120,7 +173,7 @@ async def create_task(payload: TaskCreationPayload, background_tasks: Background
       Currently known: 'tswiqon'. Defaults to 'tswiqon'.
     """
     task_id = str(uuid.uuid4())
-    logging.info(f"Received task creation request. Assigning Task ID: {task_id} for company: {payload.target_company_name}")
+    logging.info(f"Received task creation request from user '{current_user.username}'. Assigning Task ID: {task_id} for company: {payload.target_company_name}")
 
     target_queue = TARGET_QUEUES.get(payload.target_company_name.lower() if payload.target_company_name else "tswiqon", DEFAULT_FALLBACK_QUEUE)
     
@@ -170,7 +223,11 @@ async def create_task(payload: TaskCreationPayload, background_tasks: Background
 @app.get("/api/v1/tasks/{task_id}", 
          response_model=CoreTaskResponse,
          tags=["Tasks"])
-async def get_core_task_status(task_id: str, db: Session = Depends(get_db)):
+async def get_core_task_status(
+    task_id: str, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_utils.get_current_user)
+):
     """
     Retrieve the status of a task from core_api's perspective.
     
@@ -192,7 +249,12 @@ async def get_core_task_status(task_id: str, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/tasks", 
          tags=["Tasks"])
-async def list_core_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+async def list_core_tasks(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth_utils.get_current_user)
+):
     """
     List tasks tracked by core_api with pagination.
     
