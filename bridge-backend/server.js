@@ -171,16 +171,21 @@ while (true) {
                         throw new Error('Invalid response format, missing task_id or status.');
                     }
 
-                      // Update Task in Database
-                    console.log(`[MQ Listener] Updating task ${parsedTaskId} status to '${status}'`);
-                    const updateQuery = `
-                        UPDATE tasks
-                        SET status = $1, result = $2, updated_at = NOW()
-                        WHERE task_id = $3
-                        RETURNING task_id;
+                      // Upsert Task in Database (INSERT or UPDATE)
+                    console.log(`[MQ Listener] Upserting task ${parsedTaskId} with status '${status}'`);
+                    const upsertQuery = `
+                        INSERT INTO tasks (task_id, status, result, created_at, updated_at)
+                        VALUES ($1, $2, $3, NOW(), NOW())
+                        ON CONFLICT (task_id) 
+                        DO UPDATE SET 
+                            status = EXCLUDED.status,
+                            result = EXCLUDED.result,
+                            updated_at = NOW()
+                        RETURNING task_id, status;
                     `;
                     const resultPayload = result || (details ? { info: details } : null);
-                    console.log(`[DEBUG] Updating task ${parsedTaskId} with status: ${status}`);
+                    
+                    console.log(`[DEBUG] Upserting task ${parsedTaskId} with status: ${status}`);
                     console.log(`[DEBUG] Result payload type: ${typeof resultPayload}`);
                     console.log(`[DEBUG] Result payload size: ${JSON.stringify(resultPayload).length} chars`);
                     
@@ -189,18 +194,19 @@ while (true) {
                     console.log(`[DEBUG] JSON payload length: ${jsonPayload ? jsonPayload.length : 0} chars`);
                     
                     try {
-                        const dbResult = await db.query(updateQuery, [status, jsonPayload, parsedTaskId]);
+                        const dbResult = await db.query(upsertQuery, [parsedTaskId, status, jsonPayload]);
                         console.log(`[DEBUG] Query result:`, dbResult);
 
                         if (dbResult.rowCount > 0) {
-                            console.log(`[MQ Listener] Task ${parsedTaskId} updated successfully in DB.`);
+                            const action = dbResult.rows[0].status === status ? 'upserted' : 'updated';
+                            console.log(`[MQ Listener] Task ${parsedTaskId} ${action} successfully in DB with status: ${dbResult.rows[0].status}`);
                               channel.ack(msg); // Acknowledge message processing
                         } else {
-                            console.warn(`[MQ Listener] Task ${parsedTaskId} not found in DB for update.`);
-                              channel.nack(msg, false, false); // Reject message if task not found
+                            console.warn(`[MQ Listener] Unexpected: Task ${parsedTaskId} upsert returned 0 rows.`);
+                              channel.nack(msg, false, false); // Reject message if unexpected result
                         }
                     } catch (dbError) {
-                        console.error(`[DB ERROR] Failed to update task ${parsedTaskId}:`, dbError);
+                        console.error(`[DB ERROR] Failed to upsert task ${parsedTaskId}:`, dbError);
                         channel.nack(msg, false, false); // Reject message on DB error
                     }
 
