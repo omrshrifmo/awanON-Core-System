@@ -1,14 +1,107 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
-import { submitNewTask, getTaskStatus, parseBlueprint, TaskSubmissionResponse, TaskStatusResponse, TaskResult } from './apiService'
+import { 
+  submitNewTask, 
+  getTaskStatus, 
+  parseBlueprint, 
+  registerUser, 
+  loginUser, 
+  getAuthToken, 
+  logoutUser,
+  TaskSubmissionResponse, 
+  TaskStatusResponse, 
+  TaskResult,
+  UserRegistrationResponse 
+} from './apiService'
 
 function App() {
+  // Task-related state
   const [taskDetails, setTaskDetails] = useState('')
   const [submittedTaskId, setSubmittedTaskId] = useState<string | null>(null)
   const [taskResult, setTaskResult] = useState<TaskStatusResponse | null>(null)
   const [parsedBlueprint, setParsedBlueprint] = useState<TaskResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Authentication state
+  const [token, setToken] = useState<string | null>(null)
+  const [currentUser, setCurrentUser] = useState<UserRegistrationResponse | null>(null)
+  const [showLogin, setShowLogin] = useState(true) // true for login, false for register
+  
+  // Auth form state
+  const [authUsername, setAuthUsername] = useState('')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
+
+  // Check for existing token on app load
+  useEffect(() => {
+    const existingToken = getAuthToken()
+    if (existingToken) {
+      setToken(existingToken)
+      // In a real app, you might want to validate the token with a /auth/me endpoint
+    }
+  }, [])
+
+  // Authentication handlers
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!authUsername.trim() || !authEmail.trim() || !authPassword.trim()) {
+      setAuthError('Please fill in all fields')
+      return
+    }
+
+    setAuthLoading(true)
+    setAuthError(null)
+
+    try {
+      const userData = await registerUser(authUsername, authEmail, authPassword)
+      setCurrentUser(userData)
+      // Auto-login after registration
+      const loginData = await loginUser(authUsername, authPassword)
+      setToken(loginData.access_token)
+      setAuthUsername('')
+      setAuthEmail('')
+      setAuthPassword('')
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Registration failed')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!authUsername.trim() || !authPassword.trim()) {
+      setAuthError('Please enter username and password')
+      return
+    }
+
+    setAuthLoading(true)
+    setAuthError(null)
+
+    try {
+      const loginData = await loginUser(authUsername, authPassword)
+      setToken(loginData.access_token)
+      setAuthUsername('')
+      setAuthPassword('')
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Login failed')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleLogout = () => {
+    logoutUser()
+    setToken(null)
+    setCurrentUser(null)
+    setSubmittedTaskId(null)
+    setTaskResult(null)
+    setParsedBlueprint(null)
+    setError(null)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,10 +162,164 @@ function App() {
     }
   }
 
+  // If not authenticated, show login/register form
+  if (!token) {
+    return (
+      <div style={{ maxWidth: '400px', margin: '0 auto', padding: '20px' }}>
+        <h1>🤖 awanON AI Task Submission</h1>
+        <p>Please {showLogin ? 'login' : 'register'} to access the task submission system</p>
+
+        <div style={{ marginBottom: '20px' }}>
+          <button 
+            onClick={() => setShowLogin(true)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: showLogin ? '#007bff' : '#f8f9fa',
+              color: showLogin ? 'white' : '#333',
+              border: '1px solid #007bff',
+              borderRadius: '4px 0 0 4px',
+              cursor: 'pointer'
+            }}
+          >
+            Login
+          </button>
+          <button 
+            onClick={() => setShowLogin(false)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: !showLogin ? '#007bff' : '#f8f9fa',
+              color: !showLogin ? 'white' : '#333',
+              border: '1px solid #007bff',
+              borderRadius: '0 4px 4px 0',
+              cursor: 'pointer'
+            }}
+          >
+            Register
+          </button>
+        </div>
+
+        <form onSubmit={showLogin ? handleLogin : handleRegister}>
+          <div style={{ marginBottom: '15px' }}>
+            <label htmlFor="authUsername" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+              Username:
+            </label>
+            <input 
+              id="authUsername"
+              type="text"
+              value={authUsername} 
+              onChange={(e) => setAuthUsername(e.target.value)} 
+              placeholder="Enter your username"
+              style={{ 
+                width: '100%', 
+                padding: '10px', 
+                border: '1px solid #ccc', 
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+              required 
+            />
+          </div>
+
+          {!showLogin && (
+            <div style={{ marginBottom: '15px' }}>
+              <label htmlFor="authEmail" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                Email:
+              </label>
+              <input 
+                id="authEmail"
+                type="email"
+                value={authEmail} 
+                onChange={(e) => setAuthEmail(e.target.value)} 
+                placeholder="Enter your email"
+                style={{ 
+                  width: '100%', 
+                  padding: '10px', 
+                  border: '1px solid #ccc', 
+                  borderRadius: '4px',
+                  fontSize: '14px'
+                }}
+                required 
+              />
+            </div>
+          )}
+
+          <div style={{ marginBottom: '15px' }}>
+            <label htmlFor="authPassword" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+              Password:
+            </label>
+            <input 
+              id="authPassword"
+              type="password"
+              value={authPassword} 
+              onChange={(e) => setAuthPassword(e.target.value)} 
+              placeholder="Enter your password"
+              style={{ 
+                width: '100%', 
+                padding: '10px', 
+                border: '1px solid #ccc', 
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+              required 
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={authLoading}
+            style={{
+              width: '100%',
+              padding: '10px 20px',
+              backgroundColor: authLoading ? '#ccc' : '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: authLoading ? 'not-allowed' : 'pointer',
+              fontSize: '16px'
+            }}
+          >
+            {authLoading ? (showLogin ? 'Logging in...' : 'Registering...') : (showLogin ? 'Login' : 'Register')}
+          </button>
+        </form>
+
+        {authError && (
+          <div style={{ 
+            backgroundColor: '#f8d7da', 
+            color: '#721c24', 
+            padding: '15px', 
+            borderRadius: '4px', 
+            marginTop: '20px',
+            border: '1px solid #f5c6cb'
+          }}>
+            <strong>Error:</strong> {authError}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // If authenticated, show the main task submission interface
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-      <h1>🤖 awanON AI Task Submission</h1>
-      <p>Submit a task to generate an AI-powered company blueprint</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div>
+          <h1>🤖 awanON AI Task Submission</h1>
+          <p>Submit a task to generate an AI-powered company blueprint</p>
+        </div>
+        <button 
+          onClick={handleLogout}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#dc3545',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Logout
+        </button>
+      </div>
 
       <form onSubmit={handleSubmit} style={{ marginBottom: '30px' }}>
         <div style={{ marginBottom: '15px' }}>
