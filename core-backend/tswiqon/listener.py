@@ -34,7 +34,9 @@ def get_llm_response_for_blueprint(task_details_str: str, target_company_name: s
     system_prompt = (
         "You are an expert strategic business consultant AI. Your task is to generate a detailed company blueprint "
         "based on a given specialization. The output MUST be a valid JSON object that conforms to the "
-        "CompanyBlueprintV1 Pydantic model. Focus on providing creative, actionable, and relevant suggestions."
+        "CompanyBlueprintV1 Pydantic model. Respond with *ONLY* the JSON object and nothing else. "
+        "Do not include any markdown formatting like ```json or ``` at the beginning or end. "
+        "Do not include any explanatory text or conversation outside of the JSON structure itself. "
         f"The company blueprint is for '{target_company_name}'."
         "Ensure all required fields are present and adhere to any length or content constraints mentioned in the model schema."
         "The specialization for the company is: " + task_details_str
@@ -53,7 +55,7 @@ def get_llm_response_for_blueprint(task_details_str: str, target_company_name: s
             model=LITELLM_MODEL_NAME,
             messages=messages,
             # For OpenAI models and some others that support it:
-            # response_format={"type": "json_object"}, 
+            response_format={"type": "json_object"}, 
             # Or if using Instructor with LiteLLM:
             # response_model=CompanyBlueprintV1,
             # max_tokens=2000 # Adjust as needed
