@@ -58,7 +58,7 @@ def analyze_task(state: AgentState) -> AgentState:
         
     return state
 
-def research_context(state: AgentState) -> AgentState:
+def research_industry(state: AgentState) -> AgentState:
     """Step 2: Research industry context and best practices"""
     logging.info("Step 2: Researching industry context")
     
@@ -339,15 +339,15 @@ def create_workflow(model_name: str) -> StateGraph:
     
     # Add nodes
     workflow.add_node("analyze_task", analyze_task)
-    workflow.add_node("research_context", research_context)
+    workflow.add_node("research_industry", research_industry)
     workflow.add_node("generate_blueprint", generate_blueprint)
     workflow.add_node("review_and_refine", review_and_refine)
     workflow.add_node("validate_output", validate_output)
     
     # Define the flow
     workflow.set_entry_point("analyze_task")
-    workflow.add_edge("analyze_task", "research_context")
-    workflow.add_edge("research_context", "generate_blueprint")
+    workflow.add_edge("analyze_task", "research_industry")
+    workflow.add_edge("research_industry", "generate_blueprint")
     workflow.add_edge("generate_blueprint", "review_and_refine")
     workflow.add_edge("review_and_refine", "validate_output")
     workflow.add_edge("validate_output", END)
