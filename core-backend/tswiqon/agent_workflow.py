@@ -1,11 +1,12 @@
 import json
 import logging
-from typing import Dict, Any, TypedDict
+from typing import Dict, Any, TypedDict, Optional
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, SystemMessage
 from litellm import completion
 from models import CompanyBlueprintV1
 from pydantic import ValidationError
+from .rag_utils import query_vector_store
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[LangGraph Agent] %(asctime)s - %(levelname)s - %(message)s')
@@ -16,6 +17,7 @@ class AgentState(TypedDict):
     model_name: str
     analysis_result: Dict[str, Any]
     research_context: Dict[str, Any]
+    research_findings: Optional[str]  # RAG retrieved documents
     blueprint_draft: Dict[str, Any]
     refined_blueprint: Dict[str, Any]
     final_blueprint: Dict[str, Any]
@@ -59,63 +61,84 @@ def analyze_task(state: AgentState) -> AgentState:
     return state
 
 def research_industry(state: AgentState) -> AgentState:
-    """Step 2: Research industry context and best practices"""
-    logging.info("Step 2: Researching industry context")
+    """Step 2: Research industry context using RAG from knowledge base"""
+    logging.info("Step 2: Researching industry context using RAG")
     
     if state.get('error'):
         return state
         
     analysis = state.get('analysis_result', {})
     business_domain = analysis.get('business_domain', 'AI services')
+    task_details = state.get('task_details', '')
     
-    system_prompt = (
-        "You are an industry research AI. Based on the business domain, provide industry context. "
-        "Respond with a JSON object containing: "
-        "- industry_trends: array of strings (current trends) "
-        "- common_challenges: array of strings (typical challenges) "
-        "- success_factors: array of strings (key success factors) "
-        "- competitive_landscape: string (brief overview) "
-        "Respond with ONLY the JSON object, no markdown formatting."
-    )
-    
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Research industry context for: {business_domain}"}
-    ]
+    # Formulate search query based on task details and business domain
+    search_query = f"Information regarding: {task_details} {business_domain} company blueprint SOP best practices"
     
     try:
-        response = completion(
-            model=state['model_name'],
-            messages=messages,
-            response_format={"type": "json_object"}
-        )
+        # Query the vector store for relevant documents
+        logging.info(f"Querying vector store with: '{search_query}'")
+        retrieved_docs = query_vector_store(search_query, k=3)
         
-        research_result = json.loads(response.choices[0].message.content)
-        state['research_context'] = research_result
-        logging.info("Industry research completed")
+        if retrieved_docs and not any("Error:" in doc for doc in retrieved_docs):
+            # Join retrieved documents into a single context string
+            research_findings = "\n\n---\n\n".join(retrieved_docs)
+            state['research_findings'] = research_findings
+            
+            # Log summary of retrieved context
+            total_chars = len(research_findings)
+            logging.info(f"Retrieved {len(retrieved_docs)} documents with {total_chars} characters total")
+            logging.info(f"Research findings preview: {research_findings[:200]}...")
+            
+            # Create a structured research context for backward compatibility
+            state['research_context'] = {
+                "source": "RAG_knowledge_base",
+                "documents_retrieved": len(retrieved_docs),
+                "total_content_length": total_chars,
+                "search_query": search_query,
+                "summary": f"Retrieved {len(retrieved_docs)} relevant documents from knowledge base"
+            }
+            
+        else:
+            # Handle case where RAG retrieval failed or returned errors
+            error_msg = "No relevant documents found in knowledge base"
+            if retrieved_docs and any("Error:" in doc for doc in retrieved_docs):
+                error_msg = retrieved_docs[0]  # Use the error message
+            
+            logging.warning(f"RAG retrieval issue: {error_msg}")
+            state['research_findings'] = f"RAG retrieval note: {error_msg}"
+            state['research_context'] = {
+                "source": "RAG_fallback",
+                "error": error_msg,
+                "search_query": search_query
+            }
+        
+        logging.info("RAG-based research completed")
         
     except Exception as e:
-        logging.error(f"Error in research_context: {e}")
-        state['error'] = f"Research failed: {str(e)}"
+        logging.error(f"Error in RAG research: {e}")
+        state['error'] = f"RAG research failed: {str(e)}"
         
     return state
 
 def generate_blueprint(state: AgentState) -> AgentState:
-    """Step 3: Generate initial company blueprint"""
-    logging.info("Step 3: Generating initial blueprint")
+    """Step 3: Generate initial company blueprint using RAG research findings"""
+    logging.info("Step 3: Generating initial blueprint with RAG context")
     
     if state.get('error'):
         return state
         
     analysis = state.get('analysis_result', {})
     research = state.get('research_context', {})
+    research_findings = state.get('research_findings', '')
     
     system_prompt = (
         "You are an expert strategic business consultant AI. Generate a detailed company blueprint "
-        "based on the analysis and research provided. The output MUST be a valid JSON object that "
-        "conforms to the CompanyBlueprintV1 Pydantic model. Respond with *ONLY* the JSON object "
-        "and nothing else. Do not include any markdown formatting like ```json or ``` at the "
-        "beginning or end. Do not include any explanatory text outside of the JSON structure. "
+        "based on the analysis and research findings provided. Use the research findings from the "
+        "knowledge base to inform your blueprint design, especially for SOPs and best practices. "
+        "The output MUST be a valid JSON object that conforms to the CompanyBlueprintV1 Pydantic model. "
+        "Respond with *ONLY* the JSON object and nothing else. Do not include any markdown formatting "
+        "like ```json or ``` at the beginning or end. Do not include any explanatory text outside "
+        "of the JSON structure. "
         f"The company blueprint is for '{state['target_company_name']}'. "
         "The JSON must include these exact fields: "
         "- company_name_suggestion: string (creative name for the AI company) "
@@ -129,7 +152,12 @@ def generate_blueprint(state: AgentState) -> AgentState:
     user_content = (
         f"Generate a company blueprint for: {state['task_details']}\n"
         f"Analysis: {json.dumps(analysis)}\n"
-        f"Research: {json.dumps(research)}"
+        f"Research Context: {json.dumps(research)}\n\n"
+        f"Research Findings from Knowledge Base:\n"
+        f"{research_findings}\n"
+        f"---\n"
+        f"Based on the above research findings, generate the blueprint incorporating relevant "
+        f"best practices, SOP templates, and design principles found in the knowledge base."
     )
     
     messages = [
@@ -146,7 +174,7 @@ def generate_blueprint(state: AgentState) -> AgentState:
         
         blueprint_draft = json.loads(response.choices[0].message.content)
         state['blueprint_draft'] = blueprint_draft
-        logging.info("Initial blueprint generated")
+        logging.info("Initial blueprint generated with RAG context")
         
     except Exception as e:
         logging.error(f"Error in generate_blueprint: {e}")
@@ -368,6 +396,7 @@ def run_agent_workflow(task_details: str, target_company_name: str, model_name: 
         "model_name": model_name,
         "analysis_result": {},
         "research_context": {},
+        "research_findings": None,
         "blueprint_draft": {},
         "refined_blueprint": {},
         "final_blueprint": {},
