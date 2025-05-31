@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from litellm import completion, BudgetManager # budget_manager for cost tracking (optional)
 from models import CompanyBlueprintV1 # Make sure models.py is in the same directory or PYTHONPATH is set
 from agent_workflow import run_agent_workflow
+import rag_utils # RAG utilities for document ingestion and retrieval
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='[TswiqON Agent] %(asctime)s - %(levelname)s - %(message)s')
@@ -154,6 +155,9 @@ def start_listening():
 
 if __name__ == '__main__':
     try:
+        logging.info("Initializing RAG system: Creating/Loading FAISS index...")
+        rag_utils.create_and_save_faiss_index() # Ensure index is ready on startup
+        logging.info("FAISS index initialization complete.")
         start_listening()
     except KeyboardInterrupt:
         logging.info("TswiqON Agent shutting down...")
