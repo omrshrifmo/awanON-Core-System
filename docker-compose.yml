@@ -59,6 +59,8 @@ services:
       context: ./bridge-backend
       dockerfile: Dockerfile
     restart: always
+    ports:
+      - "3001:3000" # Bridge internal Node.js app runs on 3000, map to host 3001
     depends_on:
       - db
       - rabbitmq
