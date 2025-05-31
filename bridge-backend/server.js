@@ -1,5 +1,6 @@
 // bridge-backend/server.js
 const express = require('express');
+const cors = require('cors');
 const amqp = require('amqplib');
 const crypto = require('crypto');
 const db = require('./db'); // Import database query function
@@ -23,6 +24,14 @@ if (!databaseUrl) {
 console.log('[Bridge] Environment variables loaded:');
 console.log(`[Bridge] - DATABASE_URL: ${databaseUrl}`);
 console.log(`[Bridge] - RABBITMQ_URL: ${rabbitmqUrl}`);
+
+// CORS Configuration
+app.use(cors({
+    origin: '*', // In production, replace with specific origins like ['http://localhost:3000', 'http://localhost:5173']
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 app.use(express.json());
 

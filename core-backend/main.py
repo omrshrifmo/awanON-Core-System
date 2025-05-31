@@ -4,6 +4,7 @@ import uuid
 import logging
 import pika
 from fastapi import FastAPI, HTTPException, BackgroundTasks, status, Request, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
 
@@ -42,6 +43,15 @@ app = FastAPI(
     title="awanON Core API",
     description="Manages tasks and interactions with awanON AI company services.",
     version="0.1.0"
+)
+
+# --- CORS Configuration ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins like ["http://localhost:3000", "http://localhost:5173"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- RabbitMQ Connection Helper ---

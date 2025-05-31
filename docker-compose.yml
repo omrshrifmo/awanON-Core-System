@@ -84,6 +84,20 @@ services:
       - ./core-backend/tswiqon:/app
       # - /path/to/your/local/gcp-credentials.json:/app/gcp-credentials.json # If using Vertex AI with a key file
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "5173:5173" # Vite dev server
+    depends_on:
+      - core_api
+      - bridge
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # Prevent overwriting node_modules with host volume
+
 
 volumes:
   postgres_data:
