@@ -21,4 +21,5 @@ EXPOSE 80
 
 # Command to run the FastAPI application using Uvicorn
 # Ensure main.py contains the FastAPI app instance (e.g., app = FastAPI())
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--forwarded-allow-ips", "*"]
+# This command uses the PORT environment variable if set, otherwise defaults to 80.
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-80} --forwarded-allow-ips '*'"]

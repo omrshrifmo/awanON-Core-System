@@ -26,7 +26,7 @@ services:
   core_api:
     build:
       context: ./core-backend
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile
     restart: always
     ports:
       - "3000:80" # FastAPI will run on port 80 in the container
@@ -63,7 +63,7 @@ services:
   tswiqon_agent:
     build:
       context: ./core-backend/tswiqon
-      dockerfile: Dockerfile.tswiqon
+      dockerfile: Dockerfile
     restart: always
     depends_on:
       - rabbitmq

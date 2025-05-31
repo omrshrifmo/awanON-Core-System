@@ -1,18 +1,19 @@
-# core-backend/tswiqon/Dockerfile
-FROM python:3.11-slim
-# Using Python 3.11 slim version
+# Start from a Python base image
+FROM python:3.9-slim
 
-WORKDIR /usr/src/app
+# Set the working directory in the container
+WORKDIR /app
 
-# Install OS dependencies if needed later (e.g., for libraries like OpenCV)
-# RUN apt-get update && apt-get install -y --no-install-recommends some-package && rm -rf /var/lib/apt/lists/*
+# Copy the requirements file into the container
+COPY requirements.txt .
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt ./
+# Install Python dependencies
+# Ensure litellm is installed with framework-specific extras if needed e.g. [vertexai]
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Copy the rest of the application code into the container
 COPY . .
 
-# Specify the command to run the listener script
-CMD [ "python", "listener.py" ]
+# Command to run the listener script when the container starts
+# Ensure listener.py is executable or called with python
+CMD ["python", "listener.py"]
