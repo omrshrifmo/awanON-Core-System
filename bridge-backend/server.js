@@ -70,13 +70,19 @@ app.post('/api/v1/tasks/:companyName', async (req, res) => {
         VALUES ($1, $2, $3, $4)
         RETURNING *;
         `;
-        const values = [taskId, companyName, 'dispatched', taskPayload];
+        const values = [taskId, companyName, 'dispatched', JSON.stringify(taskPayload)];
         const dbResult = await db.query(insertQuery, values);
         const createdTask = dbResult.rows[0];
         console.log(`[Bridge] Task ${taskId} saved to DB as 'dispatched'.`);
 
         // 2. Prepare & Publish message to RabbitMQ
-        const message = { taskId: createdTask.task_id, payload: createdTask.details, sentAt: new Date().toISOString() };
+        const message = { 
+            task_id: createdTask.task_id, 
+            target_company_name: companyName,
+            payload: JSON.parse(createdTask.details), 
+            sentAt: new Date().toISOString() 
+        };
+        
         mq = await getMqChannel(); // Get channel and connection
         await mq.channel.assertQueue(targetQueueName, { durable: true });
         mq.channel.sendToQueue(targetQueueName, Buffer.from(JSON.stringify(message)), { persistent: true });
@@ -185,17 +191,11 @@ while (true) {
                     `;
                     const resultPayload = result || (details ? { info: details } : null);
                     
-                    console.log(`[DEBUG] Upserting task ${parsedTaskId} with status: ${status}`);
-                    console.log(`[DEBUG] Result payload type: ${typeof resultPayload}`);
-                    console.log(`[DEBUG] Result payload size: ${JSON.stringify(resultPayload).length} chars`);
-                    
                     // Convert to JSON string for PostgreSQL JSONB
                     const jsonPayload = resultPayload ? JSON.stringify(resultPayload) : null;
-                    console.log(`[DEBUG] JSON payload length: ${jsonPayload ? jsonPayload.length : 0} chars`);
                     
                     try {
                         const dbResult = await db.query(upsertQuery, [parsedTaskId, status, jsonPayload]);
-                        console.log(`[DEBUG] Query result:`, dbResult);
 
                         if (dbResult.rowCount > 0) {
                             const action = dbResult.rows[0].status === status ? 'upserted' : 'updated';
