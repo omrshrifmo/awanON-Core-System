@@ -173,12 +173,16 @@ function App() {
           <button 
             onClick={() => setShowLogin(true)}
             style={{
-              padding: '8px 16px',
+              padding: '10px 20px',
               backgroundColor: showLogin ? '#007bff' : '#f8f9fa',
               color: showLogin ? 'white' : '#333',
-              border: '1px solid #007bff',
-              borderRadius: '4px 0 0 4px',
-              cursor: 'pointer'
+              border: '2px solid #007bff',
+              borderRadius: '6px 0 0 6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              transition: 'all 0.2s ease',
+              boxShadow: showLogin ? '0 2px 4px rgba(0, 123, 255, 0.2)' : 'none'
             }}
           >
             Login
@@ -186,12 +190,16 @@ function App() {
           <button 
             onClick={() => setShowLogin(false)}
             style={{
-              padding: '8px 16px',
+              padding: '10px 20px',
               backgroundColor: !showLogin ? '#007bff' : '#f8f9fa',
               color: !showLogin ? 'white' : '#333',
-              border: '1px solid #007bff',
-              borderRadius: '0 4px 4px 0',
-              cursor: 'pointer'
+              border: '2px solid #007bff',
+              borderRadius: '0 6px 6px 0',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              transition: 'all 0.2s ease',
+              boxShadow: !showLogin ? '0 2px 4px rgba(0, 123, 255, 0.2)' : 'none'
             }}
           >
             Register
@@ -269,29 +277,42 @@ function App() {
             disabled={authLoading}
             style={{
               width: '100%',
-              padding: '10px 20px',
-              backgroundColor: authLoading ? '#ccc' : '#007bff',
+              padding: '12px 20px',
+              backgroundColor: authLoading ? '#6c757d' : '#007bff',
               color: 'white',
               border: 'none',
-              borderRadius: '4px',
+              borderRadius: '6px',
               cursor: authLoading ? 'not-allowed' : 'pointer',
-              fontSize: '16px'
+              fontSize: '16px',
+              fontWeight: 'bold',
+              transition: 'background-color 0.2s ease',
+              boxShadow: authLoading ? 'none' : '0 2px 4px rgba(0, 123, 255, 0.2)'
             }}
           >
-            {authLoading ? (showLogin ? 'Logging in...' : 'Registering...') : (showLogin ? 'Login' : 'Register')}
+            {authLoading ? 
+              (showLogin ? '🔄 Logging in...' : '🔄 Registering...') : 
+              (showLogin ? 'Login' : 'Register')
+            }
           </button>
         </form>
 
         {authError && (
-          <div style={{ 
+          <div className="error-message" style={{ 
             backgroundColor: '#f8d7da', 
             color: '#721c24', 
             padding: '15px', 
-            borderRadius: '4px', 
+            borderRadius: '6px', 
             marginTop: '20px',
-            border: '1px solid #f5c6cb'
+            border: '2px solid #dc3545',
+            boxShadow: '0 2px 4px rgba(220, 53, 69, 0.1)'
           }}>
-            <strong>Error:</strong> {authError}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '16px' }}>❌</span>
+              <div>
+                <strong>Authentication Error:</strong>
+                <div style={{ marginTop: '4px', fontSize: '14px' }}>{authError}</div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -309,13 +330,19 @@ function App() {
         <button 
           onClick={handleLogout}
           style={{
-            padding: '8px 16px',
+            padding: '10px 20px',
             backgroundColor: '#dc3545',
             color: 'white',
             border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            transition: 'background-color 0.2s ease',
+            boxShadow: '0 2px 4px rgba(220, 53, 69, 0.2)'
           }}
+          onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#c82333'}
+          onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#dc3545'}
         >
           Logout
         </button>
@@ -348,20 +375,36 @@ function App() {
           disabled={isLoading}
           style={{
             padding: '10px 20px',
-            backgroundColor: isLoading ? '#ccc' : '#007bff',
+            backgroundColor: isLoading ? '#6c757d' : '#007bff',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
             cursor: isLoading ? 'not-allowed' : 'pointer',
-            fontSize: '16px'
+            fontSize: '16px',
+            transition: 'background-color 0.2s ease'
           }}
         >
-          {isLoading ? 'Submitting...' : 'Submit Task'}
+          {isLoading ? '⏳ Submitting Task...' : 'Submit Task'}
         </button>
       </form>
 
-      {submittedTaskId && (
+      {isLoading && (
         <div style={{ 
+          backgroundColor: '#e3f2fd', 
+          color: '#1565c0', 
+          padding: '15px', 
+          borderRadius: '4px', 
+          marginBottom: '20px',
+          border: '1px solid #bbdefb',
+          textAlign: 'center',
+          fontWeight: 'bold'
+        }}>
+          ⏳ Processing your request...
+        </div>
+      )}
+
+      {submittedTaskId && (
+        <div className="success-message" style={{ 
           backgroundColor: '#f8f9fa', 
           padding: '15px', 
           borderRadius: '4px', 
@@ -375,28 +418,37 @@ function App() {
             disabled={isLoading}
             style={{
               padding: '8px 16px',
-              backgroundColor: isLoading ? '#ccc' : '#28a745',
+              backgroundColor: isLoading ? '#6c757d' : '#28a745',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: isLoading ? 'not-allowed' : 'pointer'
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              transition: 'background-color 0.2s ease'
             }}
           >
-            {isLoading ? 'Checking...' : 'Check Status'}
+            {isLoading ? '🔄 Checking Status...' : 'Check Status'}
           </button>
         </div>
       )}
 
       {error && (
-        <div style={{ 
+        <div className="error-message" style={{ 
           backgroundColor: '#f8d7da', 
           color: '#721c24', 
-          padding: '15px', 
-          borderRadius: '4px', 
+          padding: '20px', 
+          borderRadius: '8px', 
           marginBottom: '20px',
-          border: '1px solid #f5c6cb'
+          border: '2px solid #dc3545',
+          boxShadow: '0 4px 6px rgba(220, 53, 69, 0.1)',
+          position: 'relative'
         }}>
-          <strong>Error:</strong> {error}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '20px' }}>❌</span>
+            <div>
+              <strong style={{ fontSize: '16px' }}>Error:</strong>
+              <p style={{ margin: '5px 0 0 0', fontSize: '14px' }}>{error}</p>
+            </div>
+          </div>
         </div>
       )}
 
