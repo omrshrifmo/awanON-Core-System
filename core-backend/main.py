@@ -3,9 +3,15 @@ import json
 import uuid
 import logging
 import pika
-from fastapi import FastAPI, HTTPException, BackgroundTasks, status, Request
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, BackgroundTasks, status, Request, Depends
+from sqlalchemy.orm import Session
 from typing import Optional, Dict
+
+# Import our database and model components
+from database import engine, get_db
+from models import Base, CoreTask
+from schemas import TaskCreationPayload, TaskCreationResponse, CoreTaskResponse, HealthCheckResponse
+import crud
 
 # --- Configuration ---
 # Basic Logging Setup
@@ -22,25 +28,14 @@ TARGET_QUEUES = {
 }
 DEFAULT_FALLBACK_QUEUE = "default_tasks_queue" # A general queue if target is unknown
 
-# Database Configuration (Placeholders for now, will be expanded)
-# DATABASE_URL = os.getenv('DATABASE_URL') 
-# We'll integrate SQLAlchemy and database models in a later step.
-# For now, tasks are just sent to RabbitMQ and their state is tracked by the bridge.
-
-# --- Pydantic Models for API ---
-class TaskCreationPayload(BaseModel):
-    details: str = Field(..., description="The specific details or prompt for the task.")
-    target_company_name: Optional[str] = Field("tswiqon", description="The target AI company service to handle the task (e.g., 'tswiqon'). Defaults to 'tswiqon'.")
-    # We can add more fields like user_id, priority, etc. later
-
-class TaskCreationResponse(BaseModel):
-    task_id: str
-    message: str
-    status_code: int
-    target_queue: str
-
-class HealthCheckResponse(BaseModel):
-    status: str = "OK"
+# Database Configuration
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    # Create database tables if they don't exist
+    Base.metadata.create_all(bind=engine)
+    logging.info("Database tables created/verified successfully.")
+else:
+    logging.warning("DATABASE_URL not set. Database functionality will be disabled.")
 
 # --- FastAPI Application Instance ---
 app = FastAPI(
@@ -106,7 +101,7 @@ async def health_check():
             response_model=TaskCreationResponse, 
             status_code=status.HTTP_202_ACCEPTED,
             tags=["Tasks"])
-async def create_task(payload: TaskCreationPayload, background_tasks: BackgroundTasks):
+async def create_task(payload: TaskCreationPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Creates a new task and dispatches it to the appropriate AI company service via RabbitMQ.
     
@@ -124,16 +119,19 @@ async def create_task(payload: TaskCreationPayload, background_tasks: Background
         # Optionally, we could reject unknown targets if a fallback isn't desired:
         # raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Target company '{payload.target_company_name}' is not a known service.")
 
-    # Publish to RabbitMQ in the background to avoid blocking the API response
     try:
-        # Direct publish for now. For more resilience, background_tasks.add_task could be used,
-        # but direct call gives immediate feedback on publishing errors here.
+        # 1. Create task record in core_api database with PENDING status
+        if DATABASE_URL:
+            db_task = crud.create_core_task(db, task_id, payload)
+            logging.info(f"Task {task_id} created in core_api database with status: {db_task.status}")
+        
+        # 2. Publish to RabbitMQ
         publish_task_to_rabbitmq(task_id, payload, target_queue)
         
-        # TODO: Here, we would also create a record in our PostgreSQL database for this task_id
-        # with an initial status like 'PENDING' or 'QUEUED'.
-        # This will be done in a subsequent step when DB integration is added.
-        # For now, the bridge will pick up the task from RabbitMQ and create the initial DB record.
+        # 3. Update task status to DISPATCHED
+        if DATABASE_URL:
+            crud.update_core_task_status(db, task_id, "DISPATCHED")
+            logging.info(f"Task {task_id} status updated to DISPATCHED")
         
         return TaskCreationResponse(
             task_id=task_id, 
@@ -142,31 +140,66 @@ async def create_task(payload: TaskCreationPayload, background_tasks: Background
             target_queue=target_queue
         )
     except HTTPException as http_exc: # Catch HTTPExceptions raised by publish_task_to_rabbitmq
+        # If RabbitMQ publish failed, update task status to reflect the error
+        if DATABASE_URL:
+            try:
+                crud.update_core_task_status(db, task_id, "FAILED")
+            except Exception as db_err:
+                logging.error(f"Failed to update task {task_id} status to FAILED: {db_err}")
         raise http_exc 
     except Exception as e: # Catch any other unexpected errors during publishing preparation
         logging.error(f"Failed to queue task {task_id} before publishing attempt: {e}")
+        # Update task status to FAILED if it was created
+        if DATABASE_URL:
+            try:
+                crud.update_core_task_status(db, task_id, "FAILED")
+            except Exception as db_err:
+                logging.error(f"Failed to update task {task_id} status to FAILED: {db_err}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to queue task: {e}")
 
-# --- Placeholder for database interactions (to be added later) ---
-# from sqlalchemy.orm import Session
-# from . import crud, models, schemas
-# from .database import SessionLocal, engine
-# models.Base.metadata.create_all(bind=engine) # Create database tables (if not exist)
+@app.get("/api/v1/tasks/{task_id}", 
+         response_model=CoreTaskResponse,
+         tags=["Tasks"])
+async def get_core_task_status(task_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve the status of a task from core_api's perspective.
+    
+    This shows the task's status as tracked by core_api (PENDING, DISPATCHED, FAILED).
+    For detailed processing status and results, query the bridge service.
+    """
+    if not DATABASE_URL:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+            detail="Database not configured. Cannot retrieve task status from core_api."
+        )
+    
+    db_task = crud.get_core_task(db, task_id=task_id)
+    if db_task is None:
+        raise HTTPException(status_code=404, detail="Task not found in core_api records")
+    
+    return db_task
 
-# def get_db():
-#     db = SessionLocal()
-#     try:
-#         yield db
-#     finally:
-#         db.close()
 
-# @app.get("/api/v1/tasks/{task_id}", tags=["Tasks"]) # Placeholder
-# async def get_task_status(task_id: str, db: Session = Depends(get_db)):
-#     # db_task = crud.get_task(db, task_id=task_id) # Example
-#     # if db_task is None:
-#     #     raise HTTPException(status_code=404, detail="Task not found")
-#     # return db_task
-#     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Fetching task status not yet implemented directly in core_api. Query bridge service.")
+@app.get("/api/v1/tasks", 
+         tags=["Tasks"])
+async def list_core_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """
+    List tasks tracked by core_api with pagination.
+    
+    - **skip**: Number of tasks to skip (for pagination)
+    - **limit**: Maximum number of tasks to return (max 100)
+    """
+    if not DATABASE_URL:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+            detail="Database not configured. Cannot retrieve tasks from core_api."
+        )
+    
+    if limit > 100:
+        limit = 100
+    
+    tasks = crud.get_core_tasks(db, skip=skip, limit=limit)
+    return {"tasks": tasks, "skip": skip, "limit": limit, "count": len(tasks)}
 
 
 # --- Optional: Add Middleware (e.g., for logging, auth) ---
