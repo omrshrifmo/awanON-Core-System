@@ -201,3 +201,8 @@ $RECYCLE.BIN/
 *.sw?
 
 #.env
+
+# RAG/Vector Store Files
+faiss_index/
+*.faiss
+*.pkl

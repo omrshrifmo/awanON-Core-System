@@ -6,6 +6,8 @@ instructor # If choosing to use it with LiteLLM for Pydantic responses
 langgraph>=0.2.0
 langchain-core>=0.3.0
 langchain
+langchain-community
+langchain-text-splitters
 sentence-transformers
 faiss-cpu
 tiktoken

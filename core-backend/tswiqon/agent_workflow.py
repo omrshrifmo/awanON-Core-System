@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from litellm import completion
 from models import CompanyBlueprintV1
 from pydantic import ValidationError
-from .rag_utils import query_vector_store
+from rag_utils import query_vector_store
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[LangGraph Agent] %(asctime)s - %(levelname)s - %(message)s')

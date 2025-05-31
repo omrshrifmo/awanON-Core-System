@@ -1,8 +1,8 @@
 import os
-from langchain.document_loaders import DirectoryLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings # More direct than via LiteLLM for this
-from langchain.vectorstores import FAISS
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings # More direct than via LiteLLM for this
+from langchain_community.vectorstores import FAISS
 import logging
 
 # Configure basic logging for RAG utils
