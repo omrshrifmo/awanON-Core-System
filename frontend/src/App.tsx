@@ -85,6 +85,15 @@ function App() {
     try {
       const loginData = await loginUser(authUsername, authPassword)
       setToken(loginData.access_token)
+      // Set current user upon successful login
+      // Assuming UserRegistrationResponse can be partially filled or you fetch full user data
+      setCurrentUser({ 
+        username: authUsername, 
+        // Fill with placeholder or actual data if login returns more user info
+        id: currentUser?.id || 0, // Keep existing id or default
+        email: currentUser?.email || '', // Keep existing email or default
+        created_at: currentUser?.created_at || new Date().toISOString() 
+      });
       setAuthUsername('')
       setAuthPassword('')
     } catch (err) {
@@ -323,7 +332,11 @@ function App() {
   // If authenticated, show the main task submission interface
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-      {token && <p style={{ textAlign: 'right', fontStyle: 'italic', color: '#555' }}>Welcome, authenticated user!</p>}
+      {/* Authentication status messages */}
+      {token && currentUser && <p style={{ padding: '10px', backgroundColor: '#e0f7fa', border: '1px solid #007bff', borderRadius: '4px', textAlign: 'center', marginBottom: '15px' }}>Welcome back, {currentUser.username}!</p>}
+      {!token && showLogin && <p style={{ padding: '10px', backgroundColor: '#fff3cd', border: '1px solid #ffeeba', borderRadius: '4px', textAlign: 'center', marginBottom: '15px' }}>Please log in to submit tasks.</p> } 
+      {!token && !showLogin && <p style={{ padding: '10px', backgroundColor: '#fff3cd', border: '1px solid #ffeeba', borderRadius: '4px', textAlign: 'center', marginBottom: '15px' }}>Please register or log in to submit tasks.</p> }
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h1>🤖 awanON AI Task Submission</h1>
