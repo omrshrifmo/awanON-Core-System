@@ -7,6 +7,9 @@ GCP_PROJECT_ID="" # Example: your-gcp-project-id (Auto-detect: $(gcloud config g
 GCP_REGION="us-central1" # Example: us-central1 or your preferred region
 AR_REPO_NAME="awanon-images" # Your Artifact Registry Docker repository name
 
+# SUPABASE_DB_URL: Ensure this starts with "postgresql://" and is the direct database connection URI.
+# Do NOT include "https://" or any web console URL.
+# Example: postgresql://postgres:[YOUR-PASSWORD]@db.projectid.supabase.co:5432/postgres
 SUPABASE_DB_URL="[YOUR_SUPABASE_DATABASE_URL]" # MUST be filled by the user
 CLOUDAMQP_URL="[YOUR_CLOUDAMQP_RABBITMQ_URL]" # MUST be filled by the user
 JWT_SECRET_KEY="[YOUR_JWT_SECRET_KEY_min_32_chars]" # MUST be filled by the user (generate a strong random string)
