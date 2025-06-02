@@ -6,7 +6,6 @@ GCP_PROJECT_ID="awanon-ai-system" # Example: your-gcp-project-id (Auto-detect: $
 GCP_REGION="europe-west3" # Example: us-central1 or your preferred region
 AR_REPO_NAME="awanon-images" # Your Artifact Registry Docker repository name
 
-
 SUPABASE_DB_URL="postgresql://postgres:[YOUR-PASSWORD]@db.bmcwsvvqhtunthbimwgz.supabase.co:5432/postgres" # MUST be filled by the user
 CLOUDAMQP_URL="amqps://vbjaudbu:jGDOISOCl4HutRzKVe_a5S93gbZYHTnd@cow.rmq2.cloudamqp.com/vbjaudbu" # MUST be filled by the user
 JWT_SECRET_KEY="Xk(r#zcIGa}.XZPz{wrVpnLHe5:qd^u[" # MUST be filled by the user (generate a strong random string)
