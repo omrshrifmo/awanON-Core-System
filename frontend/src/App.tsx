@@ -323,6 +323,7 @@ function App() {
   // If authenticated, show the main task submission interface
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+      {token && <p style={{ textAlign: 'right', fontStyle: 'italic', color: '#555' }}>Welcome, authenticated user!</p>}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h1>🤖 awanON AI Task Submission</h1>
