@@ -15,11 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # This will include main.py (or app.py)
 COPY . .
 
-# Expose the port the FastAPI app will run on (e.g., 8000, or 80 as used in docker-compose)
-# The docker-compose.yml maps host 3000 to container 80, so FastAPI should run on 80 here.
-EXPOSE 80
+# Expose port 8080, a common port for applications.
+# Cloud Run will map external traffic to this port if specified.
+EXPOSE 8080
 
-# Command to run the FastAPI application using Uvicorn
-# Ensure main.py contains the FastAPI app instance (e.g., app = FastAPI())
-# This command uses the PORT environment variable if set, otherwise defaults to 80.
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-80} --forwarded-allow-ips '*'"]
+# Command to run the FastAPI application using Uvicorn on port 8080.
+# For pre-built images, a fixed port is often preferred.
+# Cloud Run can then map its $PORT to this fixed container port.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--forwarded-allow-ips", "*"]
