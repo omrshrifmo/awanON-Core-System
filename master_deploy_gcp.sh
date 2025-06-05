@@ -2,21 +2,18 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- USER CONFIGURABLE VARIABLES ---
-# Ensure these are correctly set before running the script.
-GCP_PROJECT_ID="" # Example: your-gcp-project-id (Auto-detect: $(gcloud config get-value project 2>/dev/null))
-GCP_REGION="us-central1" # Example: us-central1 or your preferred region
-AR_REPO_NAME="awanon-images" # Your Artifact Registry Docker repository name
+GCP_PROJECT_ID="awanon-ai-system"
+GCP_REGION="europe-west3"
+AR_REPO_NAME="awanon-images"
 
-# SUPABASE_DB_URL: Ensure this starts with "postgresql://" and is the direct database connection URI.
-# Do NOT include "https://" or any web console URL.
-# Example: postgresql://postgres:[YOUR-PASSWORD]@db.projectid.supabase.co:5432/postgres
-SUPABASE_DB_URL="[YOUR_SUPABASE_DATABASE_URL]" # MUST be filled by the user
-CLOUDAMQP_URL="[YOUR_CLOUDAMQP_RABBITMQ_URL]" # MUST be filled by the user
-JWT_SECRET_KEY="[YOUR_JWT_SECRET_KEY_min_32_chars]" # MUST be filled by the user (generate a strong random string)
-GROQ_API_KEY="[YOUR_GROQ_API_KEY]" # MUST be filled by the user
-LITELLM_MODEL_NAME="groq/llama3-8b-8192" # Default, user can change
+SUPABASE_DB_URL="postgresql://postgres:*Awn_0226420491*00*@db.bmcwsvvqhtunthbimwgz.supabase.co:5432/postgres"
+CLOUDAMQP_URL="amqps://vbjaudbu:jGDOISOCl4HutRzKVe_a5S93gbZYHTnd@cow.rmq2.cloudamqp.com/vbjaudbu"
+JWT_SECRET_KEY="Xk(r#zcIGa}.XZPz{wrVpnLHe5:qd^u["
+GROQ_API_KEY="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"
+LITELLM_MODEL_NAME="groq/llama3-8b-8192"
 
 # --- (Optional) Auto-detect GCP_PROJECT_ID if not set by user ---
+# Note: GCP_PROJECT_ID is now hardcoded above. This block will only run if it's cleared.
 if [ -z "$GCP_PROJECT_ID" ]; then
   GCP_PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
   if [ -z "$GCP_PROJECT_ID" ]; then
@@ -26,16 +23,7 @@ if [ -z "$GCP_PROJECT_ID" ]; then
   echo "INFO: Auto-detected GCP_PROJECT_ID: $GCP_PROJECT_ID"
 fi
 
-# --- Validate essential user-set variables ---
-if [ "$SUPABASE_DB_URL" == "[YOUR_SUPABASE_DATABASE_URL]" ] || \
-   [ "$CLOUDAMQP_URL" == "[YOUR_CLOUDAMQP_RABBITMQ_URL]" ] || \
-   [ "$JWT_SECRET_KEY" == "[YOUR_JWT_SECRET_KEY_min_32_chars]" ] || \
-   [ "$GROQ_API_KEY" == "[YOUR_GROQ_API_KEY]" ]; then
-  echo "ERROR: One or more critical placeholder variables (SUPABASE_DB_URL, CLOUDAMQP_URL, JWT_SECRET_KEY, GROQ_API_KEY) have not been updated."
-  echo "Please edit this script and replace placeholder values."
-  exit 1
-fi
-
+# Placeholder validation block removed as per instructions.
 
 # --- DERIVED IMAGE NAMES ---
 # Format: [REGION]-docker.pkg.dev/[PROJECT_ID]/[AR_REPO_NAME]/[IMAGE_NAME]:latest
@@ -50,10 +38,13 @@ BRIDGE_SERVICE_NAME="awanon-bridge"
 TSWIQON_AGENT_SERVICE_NAME="awanon-tswiqon-agent"
 FRONTEND_SERVICE_NAME="awanon-frontend"
 
-# --- SCRIPT WORKING DIRECTORY & REPOSITORY SETUP ---
+# --- SCRIPT ASSUMPTIONS ---
+# This script assumes it is being run from the root of the already cloned 'awanON-Core-System' repository.
+# It will no longer perform git clone or pull operations.
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-REPO_NAME="awanON-Core-System"
-REPO_CLONE_DIR="${SCRIPT_DIR}/${REPO_NAME}" # Clone into a subdirectory where the script is
+echo "INFO: Current working directory: $(pwd)"
+echo "INFO: Script directory: $SCRIPT_DIR"
+echo "INFO: All Docker build and gcloud commands will use relative paths from the current working directory."
 
 echo "INFO: Ensuring Artifact Registry API is enabled..."
 gcloud services enable artifactregistry.googleapis.com --project "${GCP_PROJECT_ID}" --quiet
@@ -79,20 +70,6 @@ if ! gcloud artifacts repositories describe "${AR_REPO_NAME}" --project="${GCP_P
 else
   echo "INFO: Artifact Registry repository '${AR_REPO_NAME}' already exists."
 fi
-
-
-# Clone/Update GitHub Repository
-if [ -d "$REPO_CLONE_DIR" ]; then
-  echo "INFO: Repository directory '$REPO_CLONE_DIR' found. Pulling latest changes from develop branch..."
-  cd "$REPO_CLONE_DIR"
-  git checkout develop
-  git pull origin develop
-else
-  echo "INFO: Cloning repository omrshrifmo/awanON-Core-System (develop branch) into $REPO_CLONE_DIR..."
-  git clone --branch develop https://github.com/omrshrifmo/awanON-Core-System.git "$REPO_CLONE_DIR"
-  cd "$REPO_CLONE_DIR"
-fi
-echo "INFO: Current working directory: $(pwd)"
 
 # --- DOCKER BUILD STAGE ---
 echo "INFO: Starting Docker build stage..."
@@ -174,13 +151,13 @@ gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" \
   --platform managed \
   --region "${GCP_REGION}" \
   --project "${GCP_PROJECT_ID}" \
-  --no-allow-unauthenticated \
   --set-env-vars="RABBITMQ_URL=${CLOUDAMQP_URL},GROQ_API_KEY=${GROQ_API_KEY},LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME}" \
-  --cpu=1 \
   --memory=1Gi \
   --min-instances=0 \
-  --max-instances=1 \
-  --no-traffic \
+  --max-instances=2 \
+  --cpu-boost \
+  --no-cpu-throttling \
+  --allow-unauthenticated \
   --quiet
 echo "✅ ${TSWIQON_AGENT_SERVICE_NAME} deployed."
 
@@ -199,7 +176,7 @@ CORE_API_URL_FOR_FRONTEND_BUILD="${CORE_API_SERVICE_URL}"
 BRIDGE_URL_FOR_FRONTEND_BUILD="${BRIDGE_SERVICE_URL}"
 
 echo "INFO: Re-building frontend image with VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD} and VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD}"
-# Ensure we are in the correct directory for frontend build relative to $REPO_CLONE_DIR
+# Assuming this script is run from the root of the cloned repository where ./frontend exists
 docker build \
   --build-arg VITE_CORE_API_URL="${CORE_API_URL_FOR_FRONTEND_BUILD}" \
   --build-arg VITE_BRIDGE_API_URL="${BRIDGE_URL_FOR_FRONTEND_BUILD}" \

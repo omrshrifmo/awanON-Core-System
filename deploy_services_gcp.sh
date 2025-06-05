@@ -2,14 +2,15 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- USER CONFIGURABLE VARIABLES ---
-GCP_PROJECT_ID="awanon-ai-system" # Example: your-gcp-project-id (Auto-detect: $(gcloud config get-value project 2>/dev/null))
-GCP_REGION="europe-west3" # Example: us-central1 or your preferred region
-AR_REPO_NAME="awanon-images" # Your Artifact Registry Docker repository name
+GCP_PROJECT_ID="[YOUR_GCP_PROJECT_ID]"
+GCP_REGION="[YOUR_GCP_REGION]" # e.g., us-central1
+AR_REPO_NAME="awanon-images" # Your Artifact Registry repository name
 
-SUPABASE_DB_URL="postgresql://postgres:[YOUR-PASSWORD]@db.bmcwsvvqhtunthbimwgz.supabase.co:5432/postgres" # MUST be filled by the user
-CLOUDAMQP_URL="amqps://vbjaudbu:jGDOISOCl4HutRzKVe_a5S93gbZYHTnd@cow.rmq2.cloudamqp.com/vbjaudbu" # MUST be filled by the user
-JWT_SECRET_KEY="Xk(r#zcIGa}.XZPz{wrVpnLHe5:qd^u[" # MUST be filled by the user (generate a strong random string)
-GROQ_API_KEY="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" # MUST be filled by the user
+SUPABASE_DB_URL="[YOUR_SUPABASE_DATABASE_URL]"
+CLOUDAMQP_URL="[YOUR_CLOUDAMQP_RABBITMQ_URL]"
+JWT_SECRET_KEY="[YOUR_JWT_SECRET_KEY_min_32_chars]" # Generate a strong one
+GROQ_API_KEY="[YOUR_GROQ_API_KEY]"
+LITELLM_MODEL_NAME="groq/llama3-8b-8192"
 
 # --- DERIVED IMAGE NAMES ---
 # Format: [REGION]-docker.pkg.dev/[PROJECT_ID]/[AR_REPO_NAME]/[IMAGE_NAME]:latest
