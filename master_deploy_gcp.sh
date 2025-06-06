@@ -152,12 +152,14 @@ gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" \
   --region "${GCP_REGION}" \
   --project "${GCP_PROJECT_ID}" \
   --set-env-vars="RABBITMQ_URL=${CLOUDAMQP_URL},GROQ_API_KEY=${GROQ_API_KEY},LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME}" \
-  --memory=1Gi \
+  --memory=2Gi \
+  --cpu=1 \
   --min-instances=0 \
   --max-instances=2 \
   --cpu-boost \
   --no-cpu-throttling \
   --allow-unauthenticated \
+  --execution-environment=gen2 \
   --quiet
 echo "✅ ${TSWIQON_AGENT_SERVICE_NAME} deployed."
 
