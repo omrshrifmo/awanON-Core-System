@@ -71,42 +71,32 @@ else
   echo "INFO: Artifact Registry repository '${AR_REPO_NAME}' already exists."
 fi
 
-# --- DOCKER BUILD STAGE ---
-echo "INFO: Starting Docker build stage..."
+# --- GOOGLE CLOUD BUILD STAGE ---
+echo "INFO: Starting Google Cloud Build stage for all services..."
 
-echo "INFO: Building core_api image: ${CORE_API_IMAGE_TAG}"
-docker build -t "${CORE_API_IMAGE_TAG}" -f ./core-backend/Dockerfile ./core-backend
+echo "INFO: Building and pushing core_api image using Google Cloud Build..."
+gcloud builds submit ./core-backend \
+  --tag "${CORE_API_IMAGE_TAG}" \
+  --project="${GCP_PROJECT_ID}" --quiet
 
-echo "INFO: Building bridge image: ${BRIDGE_IMAGE_TAG}"
-docker build -t "${BRIDGE_IMAGE_TAG}" -f ./bridge-backend/Dockerfile ./bridge-backend
+echo "INFO: Building and pushing bridge image using Google Cloud Build..."
+gcloud builds submit ./bridge-backend \
+  --tag "${BRIDGE_IMAGE_TAG}" \
+  --project="${GCP_PROJECT_ID}" --quiet
 
-echo "INFO: Building tswiqon_agent image: ${TSWIQON_AGENT_IMAGE_TAG}"
-docker build -t "${TSWIQON_AGENT_IMAGE_TAG}" -f ./core-backend/tswiqon/Dockerfile ./core-backend/tswiqon
+echo "INFO: Building and pushing tswiqon_agent image using Google Cloud Build..."
+gcloud builds submit ./core-backend/tswiqon \
+  --tag "${TSWIQON_AGENT_IMAGE_TAG}" \
+  --project="${GCP_PROJECT_ID}" \
+  --machine-type=e2-highcpu-8 --quiet
 
-echo "INFO: Building frontend image (initial build with placeholder URLs): ${FRONTEND_IMAGE_TAG}"
-docker build \
-  --build-arg VITE_CORE_API_URL="http://localhost:8080" \
-  --build-arg VITE_BRIDGE_API_URL="http://localhost:3001" \
-  -t "${FRONTEND_IMAGE_TAG}" -f ./frontend/Dockerfile ./frontend
+echo "INFO: Building and pushing frontend image (initial build with placeholders) using Google Cloud Build..."
+gcloud builds submit ./frontend \
+  --tag "${FRONTEND_IMAGE_TAG}" \
+  --project="${GCP_PROJECT_ID}" \
+  --substitutions="_VITE_CORE_API_URL=http://localhost:8080/api/v1,_VITE_BRIDGE_API_URL=http://localhost:3001/api/v1" --quiet
 
-echo "INFO: Docker build stage completed."
-
-# --- DOCKER PUSH STAGE ---
-echo "INFO: Starting Docker push stage..."
-
-echo "INFO: Pushing core_api image: ${CORE_API_IMAGE_TAG}"
-docker push "${CORE_API_IMAGE_TAG}"
-
-echo "INFO: Pushing bridge image: ${BRIDGE_IMAGE_TAG}"
-docker push "${BRIDGE_IMAGE_TAG}"
-
-echo "INFO: Pushing tswiqon_agent image: ${TSWIQON_AGENT_IMAGE_TAG}"
-docker push "${TSWIQON_AGENT_IMAGE_TAG}"
-
-echo "INFO: Pushing frontend image (initial build): ${FRONTEND_IMAGE_TAG}"
-docker push "${FRONTEND_IMAGE_TAG}"
-
-echo "INFO: Docker push stage completed."
+echo "INFO: Google Cloud Build stage completed for all images."
 
 # --- CLOUD RUN DEPLOYMENT - BACKEND SERVICES ---
 echo "INFO: Starting Cloud Run deployment for backend services..."
@@ -177,15 +167,11 @@ fi
 CORE_API_URL_FOR_FRONTEND_BUILD="${CORE_API_SERVICE_URL}"
 BRIDGE_URL_FOR_FRONTEND_BUILD="${BRIDGE_SERVICE_URL}"
 
-echo "INFO: Re-building frontend image with VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD} and VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD}"
-# Assuming this script is run from the root of the cloned repository where ./frontend exists
-docker build \
-  --build-arg VITE_CORE_API_URL="${CORE_API_URL_FOR_FRONTEND_BUILD}" \
-  --build-arg VITE_BRIDGE_API_URL="${BRIDGE_URL_FOR_FRONTEND_BUILD}" \
-  -t "${FRONTEND_IMAGE_TAG}" -f ./frontend/Dockerfile ./frontend
-
-echo "INFO: Pushing updated frontend image: ${FRONTEND_IMAGE_TAG}"
-docker push "${FRONTEND_IMAGE_TAG}"
+echo "INFO: Re-building and pushing frontend image with _VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD} and _VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD} using Google Cloud Build..."
+gcloud builds submit ./frontend \
+  --tag "${FRONTEND_IMAGE_TAG}" \
+  --project="${GCP_PROJECT_ID}" \
+  --substitutions="_VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD},_VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD}" --quiet
 
 echo "INFO: Deploying ${FRONTEND_SERVICE_NAME} from updated image ${FRONTEND_IMAGE_TAG}..."
 gcloud run deploy "${FRONTEND_SERVICE_NAME}" \

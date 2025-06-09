@@ -12,13 +12,16 @@ RUN npm install
 # Copy the rest of the application source code
 COPY . .
 
-# ARG for build-time environment variables
-ARG VITE_CORE_API_URL
-ARG VITE_BRIDGE_API_URL
+# ARG for build-time environment variables with default values
+# These ARGs are used to pass values during the `docker build` command.
+# Example: docker build --build-arg _VITE_CORE_API_URL="https://actual-api.example.com" ...
+ARG _VITE_CORE_API_URL="http://localhost:8080/api/v1"
+ARG _VITE_BRIDGE_API_URL="http://localhost:3001/api/v1"
 
-# Set ENV vars from ARGs so Vite can pick them up
-ENV VITE_CORE_API_URL=$VITE_CORE_API_URL
-ENV VITE_BRIDGE_API_URL=$VITE_BRIDGE_API_URL
+# Set ENV vars from ARGs so Vite can pick them up during the build process.
+# Vite accesses these as `import.meta.env.VITE_CORE_API_URL`, etc.
+ENV VITE_CORE_API_URL=${_VITE_CORE_API_URL}
+ENV VITE_BRIDGE_API_URL=${_VITE_BRIDGE_API_URL}
 
 # Build the application
 # Vite will replace import.meta.env.VITE_* with these ENV values
