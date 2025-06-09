@@ -94,7 +94,7 @@ echo "INFO: Building and pushing frontend image (initial build with placeholders
 gcloud builds submit ./frontend \
   --tag "${FRONTEND_IMAGE_TAG}" \
   --project="${GCP_PROJECT_ID}" \
-  --substitutions="_VITE_CORE_API_URL=http://localhost:8080,_VITE_BRIDGE_API_URL=http://localhost:3001" --quiet
+  --substitutions="_VITE_CORE_API_URL=http://localhost:3000,_VITE_BRIDGE_API_URL=http://localhost:3001" --quiet
 
 echo "INFO: Google Cloud Build stage completed for all images."
 
