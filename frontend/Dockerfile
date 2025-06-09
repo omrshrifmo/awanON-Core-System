@@ -12,16 +12,13 @@ RUN npm install
 # Copy the rest of the application source code
 COPY . .
 
-# ARG for build-time environment variables with default values
-# These ARGs are used to pass values during the `docker build` command.
-# Example: docker build --build-arg _VITE_CORE_API_URL="https://actual-api.example.com" ...
-ARG _VITE_CORE_API_URL="http://localhost:8080/api/v1"
-ARG _VITE_BRIDGE_API_URL="http://localhost:3001/api/v1"
-
-# Set ENV vars from ARGs so Vite can pick them up during the build process.
-# Vite accesses these as `import.meta.env.VITE_CORE_API_URL`, etc.
-ENV VITE_CORE_API_URL=${_VITE_CORE_API_URL}
-ENV VITE_BRIDGE_API_URL=${_VITE_BRIDGE_API_URL}
+# These ENV variables will be populated by Cloud Build's --substitutions
+# Default values are provided here in case the variables are not set (e.g., local Docker build without --build-arg)
+# Vite expects these as environment variables during the build process.
+# Note: _VITE_CORE_API_URL and _VITE_BRIDGE_API_URL are substitution variable names often used in cloudbuild.yaml.
+# The Dockerfile itself will see VITE_CORE_API_URL and VITE_BRIDGE_API_URL as environment variables.
+ENV VITE_CORE_API_URL=${_VITE_CORE_API_URL:-http://localhost:8080}
+ENV VITE_BRIDGE_API_URL=${_VITE_BRIDGE_API_URL:-http://localhost:3001}
 
 # Build the application
 # Vite will replace import.meta.env.VITE_* with these ENV values
