@@ -1,0 +1,19 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'build'
+  - '--tag=${_GCP_REGION}-docker.pkg.dev/${_GCP_PROJECT_ID}/${_AR_REPO_NAME}/frontend:latest'
+  - '--build-arg' # Explicitly pass as build-arg
+  - 'VITE_CORE_API_URL=${_VITE_CORE_API_URL}'
+  - '--build-arg' # Explicitly pass as build-arg
+  - 'VITE_BRIDGE_API_URL=${_VITE_BRIDGE_API_URL}'
+  - '.' # Build context is frontend/
+  id: 'Build frontend'
+images:
+- '${_GCP_REGION}-docker.pkg.dev/${_GCP_PROJECT_ID}/${_AR_REPO_NAME}/frontend:latest'
+substitutions:
+  _GCP_REGION: 'europe-west3'
+  _GCP_PROJECT_ID: 'awanon-ai-system'
+  _AR_REPO_NAME: 'awanon-images'
+  _VITE_CORE_API_URL: 'http://localhost:3000' # Default for initial build
+  _VITE_BRIDGE_API_URL: 'http://localhost:3001' # Default for initial build

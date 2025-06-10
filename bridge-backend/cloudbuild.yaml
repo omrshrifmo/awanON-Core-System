@@ -1,0 +1,13 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'build'
+  - '--tag=${_GCP_REGION}-docker.pkg.dev/${_GCP_PROJECT_ID}/${_AR_REPO_NAME}/bridge:latest'
+  - '.' # Build context is bridge-backend/
+  id: 'Build bridge'
+images:
+- '${_GCP_REGION}-docker.pkg.dev/${_GCP_PROJECT_ID}/${_AR_REPO_NAME}/bridge:latest'
+substitutions:
+  _GCP_REGION: 'europe-west3'
+  _GCP_PROJECT_ID: 'awanon-ai-system'
+  _AR_REPO_NAME: 'awanon-images'

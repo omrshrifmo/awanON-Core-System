@@ -1,0 +1,13 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'build'
+  - '--tag=${_GCP_REGION}-docker.pkg.dev/${_GCP_PROJECT_ID}/${_AR_REPO_NAME}/core-api:latest'
+  - '.' # Build context is core-backend/
+  id: 'Build core_api'
+images:
+- '${_GCP_REGION}-docker.pkg.dev/${_GCP_PROJECT_ID}/${_AR_REPO_NAME}/core-api:latest'
+substitutions:
+  _GCP_REGION: 'europe-west3'
+  _GCP_PROJECT_ID: 'awanon-ai-system'
+  _AR_REPO_NAME: 'awanon-images'

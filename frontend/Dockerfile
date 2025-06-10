@@ -12,14 +12,18 @@ RUN npm install
 # Copy the rest of the application source code
 COPY . .
 
-# _VITE_CORE_API_URL and _VITE_BRIDGE_API_URL are expected to be set as
-# environment variables in the Cloud Build step by the --substitutions flag.
-# Vite picks up env vars prefixed with VITE_.
-# We ensure they are passed to the npm run build command's environment.
-RUN echo "BUILD_STEP: Raw _VITE_CORE_API_URL is $_VITE_CORE_API_URL" && \
-    echo "BUILD_STEP: Raw _VITE_BRIDGE_API_URL is $_VITE_BRIDGE_API_URL" && \
-    VITE_CORE_API_URL=${_VITE_CORE_API_URL:-http://localhost:3000} \
-    VITE_BRIDGE_API_URL=${_VITE_BRIDGE_API_URL:-http://localhost:3001} \
+# Declare ARGs that can be passed during build time
+# Cloud Build will populate these if matching --substitutions are provided (without the underscore)
+# OR if passed via --build-arg in local docker build
+ARG VITE_CORE_API_URL="http://localhost:3000"
+ARG VITE_BRIDGE_API_URL="http://localhost:3001"
+
+# Set ENV vars for the Vite build process using the ARGs
+ENV VITE_CORE_API_URL=${VITE_CORE_API_URL}
+ENV VITE_BRIDGE_API_URL=${VITE_BRIDGE_API_URL}
+
+RUN echo "BUILD_STEP: VITE_CORE_API_URL is $VITE_CORE_API_URL" && \
+    echo "BUILD_STEP: VITE_BRIDGE_API_URL is $VITE_BRIDGE_API_URL" && \
     npm run build
 
 # Stage 2: Serve the static files with Nginx
