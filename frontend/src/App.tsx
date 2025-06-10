@@ -15,12 +15,63 @@ import {
 } from './apiService'
 import BlueprintDisplay from './components/BlueprintDisplay'
 
+// --- New/Updated Interface Definitions ---
+interface BlueprintSuccess {
+  company_name_suggestion?: string;
+  specialization?: string;
+  mission_statement_draft?: string;
+  key_ai_employee_roles?: Array<{ role_title: string; responsibilities: string[]; reports_to?: string | null; }>;
+  initial_sop_ideas?: string[];
+  estimated_time_to_operational_setup_days?: number | null;
+  summary?: string;
+  vision?: string;
+  values?: string[];
+  target_audience?: string;
+  marketing_channels?: string[];
+  key_features_and_services?: string[];
+  operational_workflow_overview?: string;
+  ethical_considerations?: string;
+  [key: string]: any;
+}
+
+interface BlueprintError {
+  error: string;
+  message?: string;
+  details?: string;
+  raw_output?: string;
+}
+
+type BlueprintData = BlueprintSuccess | BlueprintError;
+
+interface TaskResultData {
+  blueprint: BlueprintData;
+  model_used?: string;
+  // other RAG metadata fields (e.g., workflow_type, validation_result from original TaskResult)
+  workflow_type?: string;
+  validation_result?: { status: string; message: string; };
+  workflow_steps?: any; // Keeping it flexible for now
+}
+
+// This TaskResult will be used for the taskResult state
+interface AppTaskResult { // Renamed to avoid conflict with imported TaskResult for now
+  task_id: string;
+  status: string; // e.g., "processing", "completed_blueprint", "failed_langgraph_blueprint"
+  result?: TaskResultData | null;
+  target_company_name?: string;
+  task_details_from_backend?: string; // Renamed to avoid conflict with taskDetails state
+  created_at: string;
+  updated_at: string;
+  user_id?: number;
+}
+
+
 function App() {
   // Task-related state
   const [taskDetails, setTaskDetails] = useState('')
   const [submittedTaskId, setSubmittedTaskId] = useState<string | null>(null)
-  const [taskResult, setTaskResult] = useState<TaskStatusResponse | null>(null)
-  const [parsedBlueprint, setParsedBlueprint] = useState<TaskResult | null>(null)
+  // Updated type for taskResult state
+  const [taskResult, setTaskResult] = useState<AppTaskResult | null>(null)
+  const [parsedBlueprint, setParsedBlueprint] = useState<TaskResult | null>(null) // This still uses TaskResult from apiService.ts
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -146,13 +197,36 @@ function App() {
     setParsedBlueprint(null)
 
     try {
-      const data = await getTaskStatus(submittedTaskId)
+      // Assuming getTaskStatus from apiService will be updated to return AppTaskResult compatible structure
+      const data: AppTaskResult | null = await getTaskStatus(submittedTaskId) as AppTaskResult | null;
       setTaskResult(data)
       
-      if (data?.task?.details) {
-        const blueprint = parseBlueprint(data.task.details)
-        setParsedBlueprint(blueprint)
+      // The new 'TaskResult' (AppTaskResult) contains the 'result' field directly.
+      // 'parsedBlueprint' state might become redundant or needs to align with 'TaskResultData'
+      // For now, let's try to populate parsedBlueprint if data.result.blueprint exists
+      if (data?.result?.blueprint) {
+        // We need to ensure the structure from data.result fits the 'TaskResult' type expected by parsedBlueprint
+        // This might require adjusting the 'parseBlueprint' function or how 'parsedBlueprint' state is used.
+        // For now, if we have a blueprint, let's assume it's the main thing for parsedBlueprint.
+        // This is a temporary alignment, ideally types should be consistent.
+        const agentResult: TaskResult = { // This is the type from apiService.ts
+            blueprint: data.result.blueprint as any, // Cast as any to fit, needs proper mapping
+            model_used: data.result.model_used,
+            workflow_type: data.result.workflow_type,
+            validation_result: data.result.validation_result,
+            workflow_steps: data.result.workflow_steps,
+            // error field needs to be mapped if present in data.result.blueprint
+        };
+        if ('error' in data.result.blueprint) {
+            agentResult.error = (data.result.blueprint as BlueprintError).error;
+        }
+        setParsedBlueprint(agentResult);
+      } else if (data?.task_details_from_backend) { // If no direct blueprint, try parsing from details
+        const blueprintFromDetails = parseBlueprint(data.task_details_from_backend);
+        setParsedBlueprint(blueprintFromDetails);
       }
+
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred')
     } finally {
@@ -472,78 +546,80 @@ function App() {
       {taskResult && (
         <div className="task-result-container" style={{ marginTop: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '4px' }}>
           {/* Top-level status from bridge backend */}
-          <p style={{fontWeight: 'bold'}}>Task Overview (ID: {taskResult.task.task_id}):</p>
-          <p>Status from Bridge: <span style={{fontWeight: 'bold'}}>{formatStatus(taskResult.task.status)}</span></p>
-          <p>Target Company: {taskResult.task.target_company_name}</p>
-          <p>Last Updated: {new Date(taskResult.task.updated_at).toLocaleString()}</p>
+          <p style={{fontWeight: 'bold'}}>Task Overview (ID: {taskResult.task_id}):</p>
+          <p>Status: <span style={{fontWeight: 'bold'}}>{formatStatus(taskResult.status)}</span></p>
+          {taskResult.target_company_name && <p>Target Company: {taskResult.target_company_name}</p>}
+          <p>Last Updated: {new Date(taskResult.updated_at).toLocaleString()}</p>
           <hr style={{margin: "15px 0"}}/>
 
-          {/* Display based on parsedBlueprint (which is TaskResult type from agent) */}
-          {parsedBlueprint && parsedBlueprint.error ? (
-            // Case 1: Agent returned an error object in parsedBlueprint.error
-            <>
-              <h3 style={{ color: 'red' }}>❌ Task Processing Error by Agent.</h3>
-              <div className="error-details" style={{ marginTop: '10px', padding: '10px', border: '1px solid #ffc0cb', backgroundColor: '#fff0f1', borderRadius: '4px' }}>
-                <h4>Error Details:</h4>
-                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                  {typeof parsedBlueprint.error === 'object'
-                    ? JSON.stringify(parsedBlueprint.error, null, 2)
-                    : String(parsedBlueprint.error)}
-                </pre>
-                {/* Display raw blueprint if it exists alongside error */}
-                {parsedBlueprint.blueprint && (
+          {/* Display based on taskResult.result and its blueprint field */}
+          {taskResult.result && taskResult.result.blueprint && (
+            <div className="blueprint-details-container" style={{ marginTop: '15px' }}>
+              <h4>Blueprint/Result Details:</h4>
+              {/* Type guard to check if blueprint is an error */}
+              {((bp: any): bp is BlueprintError => typeof bp === 'object' && bp !== null && 'error' in bp)(taskResult.result.blueprint) ? (
+                <div className="error-message" style={{ color: 'red', padding: '10px', border: '1px solid red', borderRadius: '4px', backgroundColor: '#ffebee' }}>
+                  <p><strong>Error from Agent:</strong> {(taskResult.result.blueprint as BlueprintError).error}</p>
+                  {(taskResult.result.blueprint as BlueprintError).message && <p><strong>Message:</strong> {(taskResult.result.blueprint as BlueprintError).message}</p>}
+                  {(taskResult.result.blueprint as BlueprintError).details && <p><strong>Details:</strong> {(taskResult.result.blueprint as BlueprintError).details}</p>}
+                  {(taskResult.result.blueprint as BlueprintError).raw_output && (
                     <>
-                        <h4>Attempted Blueprint Data (may be incomplete):</h4>
-                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: '10px' }}>
-                            {JSON.stringify(parsedBlueprint.blueprint, null, 2)}
-                        </pre>
+                      <p><strong>Raw Output:</strong></p>
+                      <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                        {typeof (taskResult.result.blueprint as BlueprintError).raw_output === 'object'
+                          ? JSON.stringify((taskResult.result.blueprint as BlueprintError).raw_output, null, 2)
+                          : (taskResult.result.blueprint as BlueprintError).raw_output}
+                      </pre>
                     </>
-                )}
-              </div>
-            </>
-          ) : parsedBlueprint && parsedBlueprint.blueprint && Object.keys(parsedBlueprint.blueprint).length > 0 && taskResult.task.status.toLowerCase().includes('completed') ? (
-            // Case 2: Agent returned a successful blueprint and bridge status is completed
-            // (Checking Object.keys for blueprint to ensure it's not an empty object if error was handled differently)
-            <>
-              <h3 style={{ color: 'green' }}>✅ Task Completed Successfully!</h3>
-              <div style={{ marginTop: '20px' }}>
-                <h3 style={{ color: '#495057', fontSize: '24px', fontWeight: 'bold', margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  🏢 Generated Company Blueprint
-                </h3>
-                <BlueprintDisplay blueprint={parsedBlueprint.blueprint} />
-                {/* Technical Details Section */}
-                <div style={{ marginTop: '20px', backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-                  <h4 style={{ color: '#495057', fontSize: '18px', fontWeight: 'bold', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    🔧 Technical Details
-                  </h4>
-                  <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-                    {parsedBlueprint.model_used && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Model Used:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.model_used}</p></div>}
-                    {parsedBlueprint.workflow_type && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Workflow Type:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.workflow_type}</p></div>}
-                    {parsedBlueprint.validation_result && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Validation Status:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.validation_result.status} - {parsedBlueprint.validation_result.message}</p></div>}
-                  </div>
+                  )}
                 </div>
-              </div>
-            </>
-          ) : (
-            // Case 3: Processing, or other statuses, or blueprint is empty but no explicit error from agent
-            <>
-              <h3>⏳ Task Status: {formatStatus(taskResult.task.status) || 'Processing...'}</h3>
-              {parsedBlueprint && parsedBlueprint.blueprint && Object.keys(parsedBlueprint.blueprint).length > 0 ? (
-                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: '10px', color: '#555' }}>
-                      Partial/Processing Data: {JSON.stringify(parsedBlueprint.blueprint, null, 2)}
-                  </pre>
-              ) : taskResult.task.details && taskResult.task.details !== "{}" ? (
-                 <div style={{ marginTop: '10px' }}>
-                    <h4>Raw Task Details from Bridge:</h4>
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      {taskResult.task.details}
-                    </pre>
-                  </div>
               ) : (
-                <p style={{ marginTop: '10px', color: '#555' }}>No detailed blueprint data available yet. Task may still be processing or encountered an issue without specific error details from the agent.</p>
+                // If not an error, assume it's BlueprintSuccess and render with BlueprintDisplay
+                // Also check overall task status for completion before showing full blueprint display
+                taskResult.status.toLowerCase().includes('completed') ? (
+                  <>
+                    <h3 style={{ color: 'green' }}>✅ Task Completed Successfully!</h3>
+                    <div style={{ marginTop: '20px' }}>
+                      <h3 style={{ color: '#495057', fontSize: '24px', fontWeight: 'bold', margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        🏢 Generated Company Blueprint
+                      </h3>
+                       <BlueprintDisplay blueprint={taskResult.result.blueprint as BlueprintSuccess} />
+                       {/* Technical Details Section from previous logic - good to keep */}
+                       <div style={{ marginTop: '20px', backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+                         <h4 style={{ color: '#495057', fontSize: '18px', fontWeight: 'bold', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           🔧 Technical Details
+                         </h4>
+                         <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                           {taskResult.result.model_used && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Model Used:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{taskResult.result.model_used}</p></div>}
+                           {taskResult.result.workflow_type && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Workflow Type:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{taskResult.result.workflow_type}</p></div>}
+                           {taskResult.result.validation_result && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Validation Status:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{taskResult.result.validation_result.status} - {taskResult.result.validation_result.message}</p></div>}
+                         </div>
+                       </div>
+                    </div>
+                  </>
+                ) : ( // Processing or other non-completed, non-error states
+                    <>
+                      <h3>⏳ Task Status: {formatStatus(taskResult.status) || 'Processing...'}</h3>
+                      <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: '10px', color: '#555' }}>
+                          Partial/Processing Data: {JSON.stringify(taskResult.result.blueprint, null, 2)}
+                      </pre>
+                    </>
+                )
               )}
-            </>
+            </div>
           )}
+          {/* Fallback if taskResult.result or taskResult.result.blueprint is not available but there are details */}
+          {taskResult && !taskResult.result?.blueprint && taskResult.task_details_from_backend && taskResult.task_details_from_backend !== "{}" && (
+            <div style={{ marginTop: '10px' }}>
+                <h4>Raw Task Details from Bridge:</h4>
+                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {taskResult.task_details_from_backend}
+                </pre>
+            </div>
+          )}
+           {taskResult && !taskResult.result && (
+             <p style={{ marginTop: '10px', color: '#555' }}>No detailed result data available from the agent yet. Task may still be processing or encountered an issue without specific error details from the agent.</p>
+           )}
         </div>
       )}
     </div>
