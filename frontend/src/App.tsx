@@ -84,16 +84,17 @@ function App() {
 
     try {
       const loginData = await loginUser(authUsername, authPassword)
-      setToken(loginData.access_token)
+      setToken(loginData.access_token);
       // Set current user upon successful login
-      // Assuming UserRegistrationResponse can be partially filled or you fetch full user data
-      setCurrentUser({
+      // The UserRegistrationResponse interface might need adjustment if login doesn't return all fields
+      // For now, using what's available (username) and placeholder/existing for others.
+      const userToSet: UserRegistrationResponse = {
         username: authUsername,
-        // Fill with placeholder or actual data if login returns more user info
-        id: currentUser?.id || 0, // Keep existing id or default
-        email: currentUser?.email || '', // Keep existing email or default
-        created_at: currentUser?.created_at || new Date().toISOString()
-      });
+        id: 0, // Assuming login doesn't return full user details like ID, email, created_at
+        email: '', // Or fetch from a /me endpoint
+        created_at: new Date().toISOString(),
+      };
+      setCurrentUser(userToSet);
       setAuthUsername('')
       setAuthPassword('')
     } catch (err) {
@@ -467,85 +468,81 @@ function App() {
         </div>
       )}
 
+      {/* Task Result Display Section - Modified */}
       {taskResult && (
-        <div style={{ 
-          backgroundColor: '#d4edda', 
-          padding: '20px', 
-          borderRadius: '4px', 
-          marginBottom: '20px',
-          border: '1px solid #c3e6cb'
-        }}>
-          <h2>📊 Task Result</h2>
-          <div style={{ marginBottom: '15px' }}>
-            <p><strong>Status:</strong> {formatStatus(taskResult.task.status)}</p>
-            <p><strong>Company:</strong> {taskResult.task.target_company_name}</p>
-            <p><strong>Created:</strong> {new Date(taskResult.task.created_at).toLocaleString()}</p>
-            <p><strong>Updated:</strong> {new Date(taskResult.task.updated_at).toLocaleString()}</p>
-          </div>
+        <div className="task-result-container" style={{ marginTop: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '4px' }}>
+          {/* Top-level status from bridge backend */}
+          <p style={{fontWeight: 'bold'}}>Task Overview (ID: {taskResult.task.task_id}):</p>
+          <p>Status from Bridge: <span style={{fontWeight: 'bold'}}>{formatStatus(taskResult.task.status)}</span></p>
+          <p>Target Company: {taskResult.task.target_company_name}</p>
+          <p>Last Updated: {new Date(taskResult.task.updated_at).toLocaleString()}</p>
+          <hr style={{margin: "15px 0"}}/>
 
-          {parsedBlueprint?.blueprint && (
-            <div style={{ marginTop: '20px' }}>
-              <h3 style={{ 
-                color: '#495057', 
-                fontSize: '24px', 
-                fontWeight: 'bold', 
-                margin: '0 0 20px 0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                🏢 Generated Company Blueprint
-              </h3>
-              
-              <BlueprintDisplay blueprint={parsedBlueprint.blueprint} />
-              
-              {/* Technical Details Section */}
-              <div style={{ 
-                marginTop: '20px',
-                backgroundColor: '#f8f9fa', 
-                padding: '20px', 
-                borderRadius: '8px',
-                border: '1px solid #dee2e6'
-              }}>
-                <h4 style={{ 
-                  color: '#495057', 
-                  fontSize: '18px', 
-                  fontWeight: 'bold', 
-                  margin: '0 0 15px 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  🔧 Technical Details
-                </h4>
-                <div style={{ 
-                  display: 'grid', 
-                  gap: '10px',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'
-                }}>
-                  <div>
-                    <strong style={{ color: '#6c757d', fontSize: '14px' }}>Model Used:</strong>
-                    <p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.model_used}</p>
-                  </div>
-                  <div>
-                    <strong style={{ color: '#6c757d', fontSize: '14px' }}>Workflow Type:</strong>
-                    <p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.workflow_type}</p>
-                  </div>
-                  <div>
-                    <strong style={{ color: '#6c757d', fontSize: '14px' }}>Validation Status:</strong>
-                    <p style={{ margin: '4px 0 0 0', color: '#495057' }}>
-                      {parsedBlueprint.validation_result.status} - {parsedBlueprint.validation_result.message}
-                    </p>
+          {/* Display based on parsedBlueprint (which is TaskResult type from agent) */}
+          {parsedBlueprint && parsedBlueprint.error ? (
+            // Case 1: Agent returned an error object in parsedBlueprint.error
+            <>
+              <h3 style={{ color: 'red' }}>❌ Task Processing Error by Agent.</h3>
+              <div className="error-details" style={{ marginTop: '10px', padding: '10px', border: '1px solid #ffc0cb', backgroundColor: '#fff0f1', borderRadius: '4px' }}>
+                <h4>Error Details:</h4>
+                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {typeof parsedBlueprint.error === 'object'
+                    ? JSON.stringify(parsedBlueprint.error, null, 2)
+                    : String(parsedBlueprint.error)}
+                </pre>
+                {/* Display raw blueprint if it exists alongside error */}
+                {parsedBlueprint.blueprint && (
+                    <>
+                        <h4>Attempted Blueprint Data (may be incomplete):</h4>
+                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: '10px' }}>
+                            {JSON.stringify(parsedBlueprint.blueprint, null, 2)}
+                        </pre>
+                    </>
+                )}
+              </div>
+            </>
+          ) : parsedBlueprint && parsedBlueprint.blueprint && Object.keys(parsedBlueprint.blueprint).length > 0 && taskResult.task.status.toLowerCase().includes('completed') ? (
+            // Case 2: Agent returned a successful blueprint and bridge status is completed
+            // (Checking Object.keys for blueprint to ensure it's not an empty object if error was handled differently)
+            <>
+              <h3 style={{ color: 'green' }}>✅ Task Completed Successfully!</h3>
+              <div style={{ marginTop: '20px' }}>
+                <h3 style={{ color: '#495057', fontSize: '24px', fontWeight: 'bold', margin: '0 0 20px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  🏢 Generated Company Blueprint
+                </h3>
+                <BlueprintDisplay blueprint={parsedBlueprint.blueprint} />
+                {/* Technical Details Section */}
+                <div style={{ marginTop: '20px', backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+                  <h4 style={{ color: '#495057', fontSize: '18px', fontWeight: 'bold', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    🔧 Technical Details
+                  </h4>
+                  <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                    {parsedBlueprint.model_used && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Model Used:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.model_used}</p></div>}
+                    {parsedBlueprint.workflow_type && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Workflow Type:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.workflow_type}</p></div>}
+                    {parsedBlueprint.validation_result && <div><strong style={{ color: '#6c757d', fontSize: '14px' }}>Validation Status:</strong><p style={{ margin: '4px 0 0 0', color: '#495057' }}>{parsedBlueprint.validation_result.status} - {parsedBlueprint.validation_result.message}</p></div>}
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {taskResult.task.status !== 'completed_langgraph_blueprint' && (
-            <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#fff3cd', borderRadius: '4px' }}>
-              <p>⏳ Task is still processing. Check back in a few moments for the complete blueprint.</p>
-            </div>
+            </>
+          ) : (
+            // Case 3: Processing, or other statuses, or blueprint is empty but no explicit error from agent
+            <>
+              <h3>⏳ Task Status: {formatStatus(taskResult.task.status) || 'Processing...'}</h3>
+              {parsedBlueprint && parsedBlueprint.blueprint && Object.keys(parsedBlueprint.blueprint).length > 0 ? (
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: '10px', color: '#555' }}>
+                      Partial/Processing Data: {JSON.stringify(parsedBlueprint.blueprint, null, 2)}
+                  </pre>
+              ) : taskResult.task.details && taskResult.task.details !== "{}" ? (
+                 <div style={{ marginTop: '10px' }}>
+                    <h4>Raw Task Details from Bridge:</h4>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                      {taskResult.task.details}
+                    </pre>
+                  </div>
+              ) : (
+                <p style={{ marginTop: '10px', color: '#555' }}>No detailed blueprint data available yet. Task may still be processing or encountered an issue without specific error details from the agent.</p>
+              )}
+            </>
           )}
         </div>
       )}
