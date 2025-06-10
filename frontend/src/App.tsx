@@ -373,7 +373,7 @@ function App() {
             id="taskDetails"
             value={taskDetails} 
             onChange={(e) => setTaskDetails(e.target.value)} 
-            placeholder="Enter your task details here... (e.g., 'Generate a detailed company blueprint for an AI-powered company specializing in personalized music generation for content creators.')"
+            placeholder="Enter details for the company blueprint you want to generate (e.g., 'AI company for personalized travel planning including SOPs')..."
             rows={5}
             style={{ 
               width: '100%', 

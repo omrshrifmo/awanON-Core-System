@@ -20,12 +20,13 @@ class AgentState(TypedDict):
     research_findings: Optional[str]  # RAG retrieved documents
     blueprint_draft: Dict[str, Any]
     refined_blueprint: Dict[str, Any]
-    final_blueprint: Dict[str, Any]
+    final_blueprint: Dict[str, Any] # This will store the final output or error
     validation_result: Dict[str, Any]
-    error: str
+    error: str # For capturing processing errors
+    is_blueprint_request: Optional[bool] = True # New field for task type
 
-def analyze_task(state: AgentState) -> AgentState:
-    """Step 1: Analyze the task requirements and extract key information"""
+def analyze_task(state: AgentState) -> dict: # Return type changed to dict
+    """Step 1: Analyze the task requirements and extract key information, determine task type"""
     logging.info("Step 1: Analyzing task requirements")
     
     system_prompt = (
@@ -35,6 +36,7 @@ def analyze_task(state: AgentState) -> AgentState:
         "- key_requirements: array of strings (main requirements) "
         "- target_market: string (who the target customers are) "
         "- complexity_level: string (simple/medium/complex) "
+        "- is_blueprint_task: boolean (true if the request is primarily for a company blueprint, false otherwise) " # Added new field
         "Respond with ONLY the JSON object, no markdown formatting."
     )
     
@@ -43,6 +45,7 @@ def analyze_task(state: AgentState) -> AgentState:
         {"role": "user", "content": f"Analyze this business task: {state['task_details']}"}
     ]
     
+    analysis_output = {}
     try:
         response = completion(
             model=state['model_name'],
@@ -50,15 +53,25 @@ def analyze_task(state: AgentState) -> AgentState:
             response_format={"type": "json_object"}
         )
         
-        analysis_result = json.loads(response.choices[0].message.content)
-        state['analysis_result'] = analysis_result
-        logging.info(f"Task analysis completed: {analysis_result.get('business_domain', 'Unknown domain')}")
+        response_json = json.loads(response.choices[0].message.content)
+        analysis_result = {key: response_json[key] for key in response_json if key != 'is_blueprint_task'}
+        is_blueprint = response_json.get("is_blueprint_task", True) # Default to True if missing
+
+        logging.info(f"Task analysis completed: {analysis_result.get('business_domain', 'Unknown domain')}, Is Blueprint Request: {is_blueprint}")
+        analysis_output = {
+            "analysis_result": analysis_result,
+            "is_blueprint_request": is_blueprint
+        }
         
     except Exception as e:
         logging.error(f"Error in analyze_task: {e}")
-        state['error'] = f"Analysis failed: {str(e)}"
+        analysis_output = {
+            "error": f"Analysis failed: {str(e)}",
+            "analysis_result": {}, # Ensure analysis_result is always present
+            "is_blueprint_request": True # Default to blueprint flow on error to avoid breaking graph
+        }
         
-    return state
+    return analysis_output
 
 def research_industry(state: AgentState) -> AgentState:
     """Step 2: Research industry context using RAG from knowledge base"""
@@ -371,16 +384,59 @@ def create_workflow(model_name: str) -> StateGraph:
     workflow.add_node("generate_blueprint", generate_blueprint)
     workflow.add_node("review_and_refine", review_and_refine)
     workflow.add_node("validate_output", validate_output)
-    
+    workflow.add_node("handle_unsupported_task", handle_unsupported_task_node)
+
+    # Define conditional routing after analysis
+    def should_proceed_to_research(state: AgentState) -> str:
+        # Default to True if 'is_blueprint_request' is missing, or if an error occurred in analysis
+        # The analyze_task node defaults is_blueprint_request to True on error to allow flow to continue.
+        # A more robust graph might have explicit error transitions from analyze_task to an error handling node or END.
+        is_blueprint = state.get('is_blueprint_request', True)
+
+        # If a critical error occurred in analyze_task that should halt normal processing
+        if state.get('error') and not is_blueprint : # Example: if error exists AND it's not a blueprint request
+             logging.error(f"Critical error during analysis and not a blueprint request: {state.get('error')}")
+             # This specific condition might be better handled by analyze_task directly populating
+             # final_blueprint with an error and is_blueprint_request=False to go to handle_unsupported_task.
+             # For now, this logic primarily routes based on is_blueprint_request.
+             # If analysis has an error, it might still try to proceed as a blueprint request by default.
+
+        logging.info(f"Conditional routing: is_blueprint_request = {is_blueprint}")
+        if is_blueprint:
+            return "research_industry"
+        else:
+            return "handle_unsupported_task"
+
     # Define the flow
     workflow.set_entry_point("analyze_task")
-    workflow.add_edge("analyze_task", "research_industry")
+    workflow.add_conditional_edges(
+        "analyze_task",
+        should_proceed_to_research,
+        {
+            "research_industry": "research_industry",
+            "handle_unsupported_task": "handle_unsupported_task"
+        }
+    )
+
     workflow.add_edge("research_industry", "generate_blueprint")
     workflow.add_edge("generate_blueprint", "review_and_refine")
     workflow.add_edge("review_and_refine", "validate_output")
     workflow.add_edge("validate_output", END)
+    workflow.add_edge("handle_unsupported_task", END) # Unsupported tasks go to END
     
     return workflow.compile()
+
+
+def handle_unsupported_task_node(state: AgentState) -> dict:
+    logging.info("Unsupported task type received. Request does not appear to be for a company blueprint.")
+    error_message = "This agent is designed to generate company blueprints. The provided request does not appear to be for a blueprint."
+    # Ensure the final_blueprint key is populated as the graph expects it for the END node.
+    return {
+        "final_blueprint": {"error": "Unsupported Task Type", "message": error_message},
+        "validation_result": {"status": "failed", "message": error_message}, # Mimic validation failure
+        "error": error_message, # Set top-level error
+        "status_message": f"Task failed: {error_message}"
+    }
 
 def run_agent_workflow(task_details: str, target_company_name: str, model_name: str) -> Dict[str, Any]:
     """Run the complete LangGraph workflow"""
