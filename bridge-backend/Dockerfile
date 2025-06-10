@@ -8,8 +8,8 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --production
-# Install only production dependencies
+RUN npm install --omit=dev
+# Install only production dependencies using the modern flag
 
 # Copy application code
 COPY . .

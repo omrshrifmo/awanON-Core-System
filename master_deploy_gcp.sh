@@ -94,7 +94,7 @@ echo "INFO: Building and pushing frontend image (initial build with placeholders
 gcloud builds submit ./frontend \
   --tag "${FRONTEND_IMAGE_TAG}" \
   --project="${GCP_PROJECT_ID}" \
-  --substitutions="_VITE_CORE_API_URL=http://localhost:3000,_VITE_BRIDGE_API_URL=http://localhost:3001" --quiet
+  --substitutions="VITE_CORE_API_URL=http://localhost:3000,VITE_BRIDGE_API_URL=http://localhost:3001" --quiet
 
 echo "INFO: Google Cloud Build stage completed for all images."
 
@@ -171,7 +171,7 @@ echo "INFO: Re-building and pushing frontend image with _VITE_CORE_API_URL=${COR
 gcloud builds submit ./frontend \
   --tag "${FRONTEND_IMAGE_TAG}" \
   --project="${GCP_PROJECT_ID}" \
-  --substitutions="_VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD},_VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD}" --quiet
+  --substitutions="VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD},VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD}" --quiet
 
 echo "INFO: Deploying ${FRONTEND_SERVICE_NAME} from updated image ${FRONTEND_IMAGE_TAG}..."
 gcloud run deploy "${FRONTEND_SERVICE_NAME}" \
