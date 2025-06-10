@@ -72,29 +72,32 @@ else
 fi
 
 # --- GOOGLE CLOUD BUILD STAGE ---
-echo "INFO: Starting Google Cloud Build stage for all services..."
+echo "INFO: Starting Google Cloud Build stage for all services using individual cloudbuild.yaml files..."
 
 echo "INFO: Building and pushing core_api image using Google Cloud Build..."
 gcloud builds submit ./core-backend \
-  --tag "${CORE_API_IMAGE_TAG}" \
+  --config=./core-backend/cloudbuild.yaml \
+  --substitutions="_GCP_PROJECT_ID=${GCP_PROJECT_ID},_GCP_REGION=${GCP_REGION},_AR_REPO_NAME=${AR_REPO_NAME}" \
   --project="${GCP_PROJECT_ID}" --quiet
 
 echo "INFO: Building and pushing bridge image using Google Cloud Build..."
 gcloud builds submit ./bridge-backend \
-  --tag "${BRIDGE_IMAGE_TAG}" \
+  --config=./bridge-backend/cloudbuild.yaml \
+  --substitutions="_GCP_PROJECT_ID=${GCP_PROJECT_ID},_GCP_REGION=${GCP_REGION},_AR_REPO_NAME=${AR_REPO_NAME}" \
   --project="${GCP_PROJECT_ID}" --quiet
 
 echo "INFO: Building and pushing tswiqon_agent image using Google Cloud Build..."
 gcloud builds submit ./core-backend/tswiqon \
-  --tag "${TSWIQON_AGENT_IMAGE_TAG}" \
-  --project="${GCP_PROJECT_ID}" \
-  --machine-type=e2-highcpu-8 --quiet
+  --config=./core-backend/tswiqon/cloudbuild.yaml \
+  --substitutions="_GCP_PROJECT_ID=${GCP_PROJECT_ID},_GCP_REGION=${GCP_REGION},_AR_REPO_NAME=${AR_REPO_NAME}" \
+  --project="${GCP_PROJECT_ID}" --quiet
+  # The machine-type is now specified in core-backend/tswiqon/cloudbuild.yaml
 
 echo "INFO: Building and pushing frontend image (initial build with placeholders) using Google Cloud Build..."
 gcloud builds submit ./frontend \
-  --tag "${FRONTEND_IMAGE_TAG}" \
-  --project="${GCP_PROJECT_ID}" \
-  --substitutions="_VITE_CORE_API_URL=http://localhost:3000,_VITE_BRIDGE_API_URL=http://localhost:3001" --quiet
+  --config=./frontend/cloudbuild.yaml \
+  --substitutions="_VITE_CORE_API_URL=http://localhost:3000,_VITE_BRIDGE_API_URL=http://localhost:3001,_GCP_PROJECT_ID=${GCP_PROJECT_ID},_GCP_REGION=${GCP_REGION},_AR_REPO_NAME=${AR_REPO_NAME}" \
+  --project="${GCP_PROJECT_ID}" --quiet
 
 echo "INFO: Google Cloud Build stage completed for all images."
 
@@ -142,6 +145,7 @@ gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" \
   --region "${GCP_REGION}" \
   --project "${GCP_PROJECT_ID}" \
   --set-env-vars="RABBITMQ_URL=${CLOUDAMQP_URL},GROQ_API_KEY=${GROQ_API_KEY},LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME}" \
+  --port=8080 \
   --memory=2Gi \
   --cpu=1 \
   --min-instances=0 \
@@ -167,11 +171,11 @@ fi
 CORE_API_URL_FOR_FRONTEND_BUILD="${CORE_API_SERVICE_URL}"
 BRIDGE_URL_FOR_FRONTEND_BUILD="${BRIDGE_SERVICE_URL}"
 
-echo "INFO: Re-building and pushing frontend image with _VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD} and _VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD} using Google Cloud Build..."
+echo "INFO: Re-building and pushing frontend image with live backend URLs using Google Cloud Build..."
 gcloud builds submit ./frontend \
-  --tag "${FRONTEND_IMAGE_TAG}" \
-  --project="${GCP_PROJECT_ID}" \
-  --substitutions="_VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD},_VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD}" --quiet
+  --config=./frontend/cloudbuild.yaml \
+  --substitutions="_VITE_CORE_API_URL=${CORE_API_URL_FOR_FRONTEND_BUILD},_VITE_BRIDGE_API_URL=${BRIDGE_URL_FOR_FRONTEND_BUILD},_GCP_PROJECT_ID=${GCP_PROJECT_ID},_GCP_REGION=${GCP_REGION},_AR_REPO_NAME=${AR_REPO_NAME}" \
+  --project="${GCP_PROJECT_ID}" --quiet
 
 echo "INFO: Deploying ${FRONTEND_SERVICE_NAME} from updated image ${FRONTEND_IMAGE_TAG}..."
 gcloud run deploy "${FRONTEND_SERVICE_NAME}" \

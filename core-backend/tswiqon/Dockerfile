@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code into the container
 COPY . .
 
+# Expose port 8080 for health checks (if implemented in listener.py)
+EXPOSE 8080
+
 # Command to run the listener script when the container starts
 # Ensure listener.py is executable or called with python
 CMD ["python", "listener.py"]

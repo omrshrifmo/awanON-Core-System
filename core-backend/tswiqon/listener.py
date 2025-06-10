@@ -3,6 +3,10 @@ import os
 import json
 import time
 import logging
+import uvicorn # Added for health check
+from fastapi import FastAPI # Added for health check
+import threading # Added for health check
+# os is already imported
 from pydantic import ValidationError
 from litellm import completion, BudgetManager # budget_manager for cost tracking (optional)
 from models import CompanyBlueprintV1 # Make sure models.py is in the same directory or PYTHONPATH is set
@@ -11,6 +15,22 @@ import rag_utils # RAG utilities for document ingestion and retrieval
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='[TswiqON Agent] %(asctime)s - %(levelname)s - %(message)s')
+
+
+# --- FastAPI Health Check (Run in a separate thread) ---
+health_app = FastAPI(docs_url=None, redoc_url=None, title="TswiqonAgentHealth")
+
+@health_app.get("/healthz", status_code=200)
+async def health_check_endpoint():
+    # Basic health check, can be expanded later if needed
+    return {"status": "healthy", "message": "Tswiqon Agent is running."}
+
+def run_fastapi_health_check():
+    port = int(os.getenv("PORT", "8080")) # Use PORT from Cloud Run, default 8080
+    # Logging is configured globally above
+    uvicorn.run(health_app, host="0.0.0.0", port=port, log_level="info")
+# --- End FastAPI Health Check ---
+
 
 # RabbitMQ Configuration
 RABBITMQ_URL = os.getenv('RABBITMQ_URL')
@@ -183,9 +203,17 @@ def start_listening():
 
 if __name__ == '__main__':
     try:
+        # Start FastAPI health check in a daemon thread
+        health_check_port = int(os.getenv("PORT", "8080"))
+        logging.info(f"Attempting to start FastAPI health check server on port {health_check_port}...")
+        health_thread = threading.Thread(target=run_fastapi_health_check, daemon=True)
+        health_thread.start()
+        logging.info("Health check server thread started.")
+
         logging.info("Initializing RAG system: Creating/Loading FAISS index...")
         rag_utils.create_and_save_faiss_index() # Ensure index is ready on startup
         logging.info("FAISS index initialization complete.")
+
         start_listening()
     except KeyboardInterrupt:
         logging.info("TswiqON Agent shutting down...")
