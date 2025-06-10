@@ -7,6 +7,7 @@ import uvicorn # Added for health check
 from fastapi import FastAPI # Added for health check
 import threading # Added for health check
 from urllib.parse import urlparse # Ensure this is at the top
+import ssl # Added for RabbitMQ SSL
 # os is already imported
 from pydantic import ValidationError
 from litellm import completion, BudgetManager # budget_manager for cost tracking (optional)
@@ -35,38 +36,74 @@ def run_fastapi_health_check():
 
 # RabbitMQ Configuration
 RABBITMQ_URL = os.getenv('RABBITMQ_URL')
-RABBITMQ_VHOST = None # Initialize RABBITMQ_VHOST
+RABBITMQ_HOST = None
+RABBITMQ_PORT = None # Will be int after parsing
+RABBITMQ_USER = None
+RABBITMQ_PASS = None
+RABBITMQ_VHOST = None
+RABBITMQ_SSL = False # For AMQPS
 
 if RABBITMQ_URL:
-    logging.info(f"Parsing RabbitMQ URL for connection parameters.")
-    # Mask password in log
-    temp_pass_for_logging = os.getenv('RABBITMQ_PASS', '****')
-    if RABBITMQ_URL and '@' in RABBITMQ_URL:
-        url_parts = RABBITMQ_URL.split('@')
-        credentials_part = url_parts[0].split('//')[1]
-        if ':' in credentials_part:
-             temp_pass_for_logging = credentials_part.split(':')[1]
-    logging_url = RABBITMQ_URL.replace(temp_pass_for_logging, "****") if temp_pass_for_logging else RABBITMQ_URL
-    logging.info(f"Original RabbitMQ URL (password masked): {logging_url}")
+    safe_log_url = RABBITMQ_URL
+    try:
+        # Basic password masking for logging
+        if "@" in safe_log_url:
+            scheme_user_part = safe_log_url.split("://")[0] + "://" + safe_log_url.split("://")[1].split(":")[0]
+            host_part = safe_log_url.split("@")[1]
+            safe_log_url = f"{scheme_user_part}:********@{host_part}"
+    except Exception:
+        pass # If parsing fails, log original
+    logging.info(f"Parsing RABBITMQ_URL: {safe_log_url}")
 
+    # from urllib.parse import urlparse # Ensure this import is present
     parsed_url = urlparse(RABBITMQ_URL)
+
     RABBITMQ_HOST = parsed_url.hostname
     RABBITMQ_PORT = parsed_url.port
     RABBITMQ_USER = parsed_url.username
-    RABBITMQ_PASS = parsed_url.password # This will be the one from the URL
+    RABBITMQ_PASS = parsed_url.password
 
-    RABBITMQ_VHOST = parsed_url.path.lstrip('/') if parsed_url.path else None
+    RABBITMQ_VHOST = parsed_url.path.strip('/') if parsed_url.path and parsed_url.path != '/' else parsed_url.username
     if not RABBITMQ_VHOST:
-         RABBITMQ_VHOST = 'vbjaudbu'
-    logging.info(f"Parsed RabbitMQ VHost: {RABBITMQ_VHOST}")
+        RABBITMQ_VHOST = 'guest'
+
+    if parsed_url.scheme == 'amqps':
+        RABBITMQ_SSL = True
+        if RABBITMQ_PORT is None:
+            RABBITMQ_PORT = 5671
+    elif parsed_url.scheme == 'amqp':
+        if RABBITMQ_PORT is None:
+            RABBITMQ_PORT = 5672
+
+    logging.info(f"Parsed RabbitMQ params: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={RABBITMQ_VHOST}, User={RABBITMQ_USER}, SSL={RABBITMQ_SSL}")
+
 else:
-    logging.info("RabbitMQ URL not found, using individual environment variables.")
-    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
-    RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
-    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
-    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'guest')
-    RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', 'vbjaudbu')
-    logging.info(f"Using RabbitMQ VHost from individual env vars (or default): {RABBITMQ_VHOST}")
+    logging.info("RABBITMQ_URL not set, attempting to use individual RabbitMQ environment variables.")
+    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
+    RABBITMQ_PORT = os.getenv('RABBITMQ_PORT')
+    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user')
+    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password')
+    RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', '/')
+    RABBITMQ_SSL = os.getenv('RABBITMQ_SSL_FALLBACK', 'False').lower() == 'true'
+    if RABBITMQ_PORT is None:
+        RABBITMQ_PORT = "5671" if RABBITMQ_SSL else "5672"
+    logging.info(f"Using individual RabbitMQ params: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={RABBITMQ_VHOST}, User={RABBITMQ_USER}, SSL={RABBITMQ_SSL}")
+
+if RABBITMQ_PORT is not None:
+    try:
+        RABBITMQ_PORT = int(RABBITMQ_PORT)
+    except ValueError:
+        default_port_for_error = 5671 if RABBITMQ_SSL else 5672
+        logging.error(f"Could not convert parsed/env RABBITMQ_PORT '{RABBITMQ_PORT}' to int. Using default {default_port_for_error}.")
+        RABBITMQ_PORT = default_port_for_error
+else:
+    default_port_for_error = 5671 if RABBITMQ_SSL else 5672
+    logging.critical(f"RABBITMQ_PORT is None after parsing and fallbacks. Critical misconfiguration. Using default {default_port_for_error}.")
+    RABBITMQ_PORT = default_port_for_error
+
+if not RABBITMQ_VHOST:
+    RABBITMQ_VHOST = RABBITMQ_USER if RABBITMQ_USER else 'guest'
+    logging.info(f"Applied final vhost fallback: {RABBITMQ_VHOST}")
 
 # LiteLLM Model Configuration
 LITELLM_MODEL_NAME = os.getenv('LITELLM_MODEL_NAME', 'groq/llama3-8b-8192')
@@ -194,26 +231,31 @@ def callback(ch, method, properties, body):
 def start_listening():
     while True:
         try:
-            if not RABBITMQ_USER or not RABBITMQ_PASS:
-                logging.error("RabbitMQ username or password not set. Cannot create credentials.")
-                # Optional: raise an error or exit if this is critical
-                time.sleep(10) # Wait before retrying connection setup
-                continue
+            # Global vars RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_VHOST, RABBITMQ_SSL are used here.
+            if not all([RABBITMQ_HOST, isinstance(RABBITMQ_PORT, int), RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST]):
+                 logging.error(f"RabbitMQ configuration incomplete: H={RABBITMQ_HOST} P={RABBITMQ_PORT}({type(RABBITMQ_PORT)}) U={RABBITMQ_USER} V={RABBITMQ_VHOST} PASS_SET={'Yes' if RABBITMQ_PASS else 'No'}")
+                 # Optional: raise an error or exit if this is critical, or just wait and retry.
+                 time.sleep(10) # Wait before retrying connection setup
+                 continue
 
-            current_credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
+            credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
+            logging.info(f"Final RabbitMQ connection params for listener: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={RABBITMQ_VHOST}, SSL={RABBITMQ_SSL}")
 
-            vhost_to_use = RABBITMQ_VHOST
-            if not vhost_to_use: # Final safety net
-                vhost_to_use = 'vbjaudbu'
-                logging.warning(f"RabbitMQ VHost was empty or None after parsing/env fallback, defaulting to: {vhost_to_use}")
-
-            logging.info(f"Attempting RabbitMQ connection with: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={vhost_to_use}, User={RABBITMQ_USER}")
+            ssl_options = None
+            if RABBITMQ_SSL:
+                # import ssl # Ensure ssl is imported locally if not globally for this function
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                ssl_options = pika.SSLOptions(context=context)
+                logging.info("SSL/TLS enabled for RabbitMQ connection in listener.")
 
             connection_params = pika.ConnectionParameters(
                 host=RABBITMQ_HOST,
                 port=RABBITMQ_PORT,
-                credentials=current_credentials,
-                virtual_host=vhost_to_use,
+                virtual_host=RABBITMQ_VHOST,
+                credentials=credentials,
+                ssl_options=ssl_options,
                 heartbeat=600,
                 blocked_connection_timeout=300
             )

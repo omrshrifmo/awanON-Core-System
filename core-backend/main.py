@@ -4,6 +4,7 @@ import uuid
 import logging
 import pika
 from urllib.parse import urlparse # Ensure this is at the top
+import ssl # Added for RabbitMQ SSL
 from datetime import timedelta
 from fastapi import FastAPI, HTTPException, BackgroundTasks, status, Request, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,43 +28,79 @@ logging.basicConfig(level=logging.INFO, format='[CoreAPI] %(asctime)s - %(leveln
 
 # RabbitMQ Configuration from Environment Variables
 RABBITMQ_URL = os.getenv('RABBITMQ_URL')
-RABBITMQ_VHOST = None # Initialize RABBITMQ_VHOST
+RABBITMQ_HOST = None
+RABBITMQ_PORT = None # Will be int after parsing
+RABBITMQ_USER = None
+RABBITMQ_PASS = None
+RABBITMQ_VHOST = None
+RABBITMQ_SSL = False # For AMQPS
 
 if RABBITMQ_URL:
-    logging.info(f"Parsing RabbitMQ URL for connection parameters.")
-    # Mask password in log
-    # Ensure RABBITMQ_PASS is defined before this line if it's used from else block or globally
-    # For safety, re-fetch RABBITMQ_PASS if it's only defined in the else block or ensure global scope
-    temp_pass_for_logging = os.getenv('RABBITMQ_PASS', '****') # Default to **** if not set globally yet
-    if RABBITMQ_URL and '@' in RABBITMQ_URL:
-        url_parts = RABBITMQ_URL.split('@')
-        credentials_part = url_parts[0].split('//')[1]
-        if ':' in credentials_part:
-             temp_pass_for_logging = credentials_part.split(':')[1]
+    safe_log_url = RABBITMQ_URL
+    try:
+        # Basic password masking for logging
+        if "@" in safe_log_url:
+            scheme_user_part = safe_log_url.split("://")[0] + "://" + safe_log_url.split("://")[1].split(":")[0]
+            host_part = safe_log_url.split("@")[1]
+            safe_log_url = f"{scheme_user_part}:********@{host_part}"
+    except Exception:
+        pass # If parsing fails, log original (should be rare)
+    logging.info(f"Parsing RABBITMQ_URL: {safe_log_url}")
 
-    logging_url = RABBITMQ_URL.replace(temp_pass_for_logging, "****") if temp_pass_for_logging else RABBITMQ_URL
-    logging.info(f"Original RabbitMQ URL (password masked): {logging_url}")
-
+    # from urllib.parse import urlparse # Ensure this import is present
     parsed_url = urlparse(RABBITMQ_URL)
+
     RABBITMQ_HOST = parsed_url.hostname
     RABBITMQ_PORT = parsed_url.port
     RABBITMQ_USER = parsed_url.username
-    RABBITMQ_PASS = parsed_url.password # This will be the one from the URL
+    RABBITMQ_PASS = parsed_url.password
 
-    # Extract vhost, remove leading '/' if present
-    RABBITMQ_VHOST = parsed_url.path.lstrip('/') if parsed_url.path else None
-    if not RABBITMQ_VHOST: # If path is empty or just '/', default it
-         RABBITMQ_VHOST = 'vbjaudbu' # Default to specific vhost if not in URL path
-    logging.info(f"Parsed RabbitMQ VHost: {RABBITMQ_VHOST}")
+    # Extract vhost, remove leading '/' if present. CloudAMQP often uses username as vhost.
+    RABBITMQ_VHOST = parsed_url.path.strip('/') if parsed_url.path and parsed_url.path != '/' else parsed_url.username
+    if not RABBITMQ_VHOST: # Further ensure vhost is sensible, fallback to 'guest' if no username either
+        RABBITMQ_VHOST = 'guest'
 
-else:
-    logging.info("RabbitMQ URL not found, using individual environment variables.")
-    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
-    RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
-    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
-    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'guest')
-    RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', 'vbjaudbu') # Default to specific vhost
-    logging.info(f"Using RabbitMQ VHost from individual env vars (or default): {RABBITMQ_VHOST}")
+
+    if parsed_url.scheme == 'amqps':
+        RABBITMQ_SSL = True
+        if RABBITMQ_PORT is None:
+            RABBITMQ_PORT = 5671 # Default AMQPS port
+    elif parsed_url.scheme == 'amqp':
+        if RABBITMQ_PORT is None:
+            RABBITMQ_PORT = 5672 # Default AMQP port
+
+    logging.info(f"Parsed RabbitMQ params: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={RABBITMQ_VHOST}, User={RABBITMQ_USER}, SSL={RABBITMQ_SSL}")
+
+else: # Fallback to individual environment variables
+    logging.info("RABBITMQ_URL not set, attempting to use individual RabbitMQ environment variables.")
+    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
+    RABBITMQ_PORT = os.getenv('RABBITMQ_PORT') # Get as string first
+    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user') # Corrected default
+    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password') # Corrected default
+    RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', '/')
+    # For SSL with fallback, user would need to set another env var e.g., RABBITMQ_SSL_FALLBACK=True
+    RABBITMQ_SSL = os.getenv('RABBITMQ_SSL_FALLBACK', 'False').lower() == 'true'
+    if RABBITMQ_PORT is None: # If env var not set
+        RABBITMQ_PORT = "5671" if RABBITMQ_SSL else "5672"
+    logging.info(f"Using individual RabbitMQ params: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={RABBITMQ_VHOST}, User={RABBITMQ_USER}, SSL={RABBITMQ_SSL}")
+
+
+# Ensure port is an integer if it was parsed/set
+if RABBITMQ_PORT is not None:
+    try:
+        RABBITMQ_PORT = int(RABBITMQ_PORT)
+    except ValueError:
+        default_port_for_error = 5671 if RABBITMQ_SSL else 5672
+        logging.error(f"Could not convert parsed/env RABBITMQ_PORT '{RABBITMQ_PORT}' to int. Using default {default_port_for_error}.")
+        RABBITMQ_PORT = default_port_for_error
+else: # If port is still None after all logic
+    default_port_for_error = 5671 if RABBITMQ_SSL else 5672
+    logging.critical(f"RABBITMQ_PORT is None after parsing and fallbacks. Critical misconfiguration. Using default {default_port_for_error}.")
+    RABBITMQ_PORT = default_port_for_error
+
+if not RABBITMQ_VHOST: # Final vhost fallback (e.g. if username was None from URL and path was /)
+    RABBITMQ_VHOST = RABBITMQ_USER if RABBITMQ_USER else 'guest' # Match CloudAMQP behavior or absolute default
+    logging.info(f"Applied final vhost fallback: {RABBITMQ_VHOST}")
 
 TARGET_QUEUES = {
     "tswiqon": "tswiqon_tasks"  # Map target company name to its specific queue
@@ -149,30 +186,29 @@ app.include_router(auth_router)
 # --- RabbitMQ Connection Helper ---
 def get_rabbitmq_connection_params():
     # RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_VHOST are now expected to be set globally (or module-level)
-    # by the logic above.
-
-    if not RABBITMQ_USER or not RABBITMQ_PASS: # Should not happen if variables are correctly parsed/defaulted
-        logging.error("RabbitMQ username or password not set. Cannot create credentials.")
-        raise ValueError("RabbitMQ username or password not configured.")
+    # Global vars RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_VHOST, RABBITMQ_SSL are used here.
+    if not all([RABBITMQ_HOST, isinstance(RABBITMQ_PORT, int), RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST]):
+         logging.error(f"RabbitMQ configuration incomplete: H={RABBITMQ_HOST} P={RABBITMQ_PORT}({type(RABBITMQ_PORT)}) U={RABBITMQ_USER} V={RABBITMQ_VHOST} PASS_SET={'Yes' if RABBITMQ_PASS else 'No'}")
+         raise ValueError("RabbitMQ configuration is incomplete. Check logs.")
 
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
+    logging.info(f"Final RabbitMQ connection params: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={RABBITMQ_VHOST}, SSL={RABBITMQ_SSL}")
 
-    # Determine vhost_to_use explicitly
-    # The global RABBITMQ_VHOST should be correctly set by the parsing logic or fallbacks already.
-    # If it somehow ended up as None or empty string from parsing an actual URL like amqp://host// (empty path)
-    # then default it here again.
-    vhost_to_use = RABBITMQ_VHOST
-    if not vhost_to_use: # Final safety net
-        vhost_to_use = 'vbjaudbu'
-        logging.warning(f"RabbitMQ VHost was empty or None after parsing/env fallback, defaulting to: {vhost_to_use}")
-
-    logging.info(f"Attempting RabbitMQ connection with: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={vhost_to_use}, User={RABBITMQ_USER}")
+    ssl_options = None
+    if RABBITMQ_SSL:
+        # import ssl # Ensure ssl is imported locally if not globally for this function
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        ssl_options = pika.SSLOptions(context=context)
+        logging.info("SSL/TLS enabled for RabbitMQ connection.")
 
     return pika.ConnectionParameters(
         host=RABBITMQ_HOST,
         port=RABBITMQ_PORT,
+        virtual_host=RABBITMQ_VHOST, # Use the globally parsed and defaulted vhost
         credentials=credentials,
-        virtual_host=vhost_to_use, # Crucial: ensure this is used
+        ssl_options=ssl_options,
         heartbeat=600,
         blocked_connection_timeout=300
     )
