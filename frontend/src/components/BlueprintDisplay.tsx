@@ -2,25 +2,35 @@ import React from 'react'
 
 interface AIEmployeeRole {
   role_title: string
-  responsibilities: string[]
-  reports_to?: string
+  responsibilities: string[];
+  reports_to?: string | null; // Match BlueprintSuccess
 }
 
+// Updated Blueprint interface to match BlueprintSuccess structure from App.tsx
 interface Blueprint {
-  company_name_suggestion: string
-  specialization: string
-  mission_statement_draft: string
-  estimated_time_to_operational_setup_days: number
-  key_ai_employee_roles: AIEmployeeRole[]
-  initial_sop_ideas: string[]
+  company_name_suggestion?: string;
+  specialization?: string;
+  mission_statement_draft?: string;
+  key_ai_employee_roles?: AIEmployeeRole[]; // Array is optional
+  initial_sop_ideas?: string[]; // Array is optional
+  estimated_time_to_operational_setup_days?: number | null;
+  summary?: string;
+  vision?: string;
+  values?: string[];
+  target_audience?: string;
+  marketing_channels?: string[];
+  key_features_and_services?: string[];
+  operational_workflow_overview?: string;
+  ethical_considerations?: string;
+  [key: string]: any; // Keep if present in BlueprintSuccess for flexibility
 }
 
 interface BlueprintDisplayProps {
-  blueprint: Blueprint
+  blueprint: Blueprint; // Uses the updated local Blueprint interface
 }
 
 const BlueprintDisplay: React.FC<BlueprintDisplayProps> = ({ blueprint }) => {
-  if (!blueprint) {
+  if (!blueprint || Object.keys(blueprint).length === 0) { // Added check for empty object
     return (
       <div style={{ 
         padding: '20px', 
@@ -58,7 +68,7 @@ const BlueprintDisplay: React.FC<BlueprintDisplayProps> = ({ blueprint }) => {
           alignItems: 'center',
           gap: '10px'
         }}>
-          🏢 {blueprint.company_name_suggestion}
+          🏢 {blueprint.company_name_suggestion || 'N/A'}
         </h2>
         <p style={{ 
           color: '#6c757d', 
@@ -66,98 +76,103 @@ const BlueprintDisplay: React.FC<BlueprintDisplayProps> = ({ blueprint }) => {
           margin: '0',
           fontStyle: 'italic'
         }}>
-          {blueprint.specialization}
+          {blueprint.specialization || 'N/A'}
         </p>
       </div>
 
       {/* Mission Statement */}
-      <div style={{ marginBottom: '30px' }}>
-        <h3 style={{ 
-          color: '#495057', 
-          fontSize: '20px', 
-          fontWeight: 'bold', 
-          margin: '0 0 15px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          🎯 Mission Statement
-        </h3>
-        <div style={{ 
-          backgroundColor: '#f8f9fa', 
-          padding: '20px', 
-          borderRadius: '8px',
-          borderLeft: '4px solid #007bff'
-        }}>
-          <p style={{ 
-            fontSize: '16px', 
-            lineHeight: '1.6', 
-            margin: '0',
-            color: '#495057'
+      {blueprint.mission_statement_draft && (
+        <div style={{ marginBottom: '30px' }}>
+          <h3 style={{
+            color: '#495057',
+            fontSize: '20px',
+            fontWeight: 'bold',
+            margin: '0 0 15px 0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
-            "{blueprint.mission_statement_draft}"
-          </p>
+            🎯 Mission Statement
+          </h3>
+          <div style={{
+            backgroundColor: '#f8f9fa',
+            padding: '20px',
+            borderRadius: '8px',
+            borderLeft: '4px solid #007bff'
+          }}>
+            <p style={{
+              fontSize: '16px',
+              lineHeight: '1.6',
+              margin: '0',
+              color: '#495057'
+            }}>
+              "{blueprint.mission_statement_draft}"
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Setup Timeline */}
-      <div style={{ marginBottom: '30px' }}>
-        <h3 style={{ 
-          color: '#495057', 
-          fontSize: '20px', 
-          fontWeight: 'bold', 
-          margin: '0 0 15px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          ⏱️ Setup Timeline
-        </h3>
-        <div style={{ 
-          backgroundColor: '#e3f2fd', 
-          padding: '15px 20px', 
-          borderRadius: '8px',
-          display: 'inline-block'
-        }}>
-          <span style={{ 
-            fontSize: '24px', 
+      {blueprint.estimated_time_to_operational_setup_days !== undefined && blueprint.estimated_time_to_operational_setup_days !== null && (
+        <div style={{ marginBottom: '30px' }}>
+          <h3 style={{
+            color: '#495057',
+            fontSize: '20px',
             fontWeight: 'bold', 
-            color: '#1565c0' 
+            margin: '0 0 15px 0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
-            {blueprint.estimated_time_to_operational_setup_days}
-          </span>
-          <span style={{ 
-            fontSize: '16px', 
-            color: '#1976d2', 
-            marginLeft: '8px' 
+            ⏱️ Setup Timeline
+          </h3>
+          <div style={{
+            backgroundColor: '#e3f2fd',
+            padding: '15px 20px',
+            borderRadius: '8px',
+            display: 'inline-block'
           }}>
-            days to operational setup
-          </span>
+            <span style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: '#1565c0'
+            }}>
+              {blueprint.estimated_time_to_operational_setup_days}
+            </span>
+            <span style={{
+              fontSize: '16px',
+              color: '#1976d2',
+              marginLeft: '8px'
+            }}>
+              days to operational setup
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* AI Employee Roles */}
-      <div style={{ marginBottom: '30px' }}>
-        <h3 style={{ 
-          color: '#495057', 
-          fontSize: '20px', 
-          fontWeight: 'bold', 
-          margin: '0 0 20px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          👥 Key AI Employee Roles
-        </h3>
-        <div style={{ 
-          display: 'grid', 
-          gap: '20px',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))'
-        }}>
-          {blueprint.key_ai_employee_roles?.map((role, index) => (
-            <div key={index} style={{ 
-              backgroundColor: '#f8f9fa', 
-              padding: '20px', 
+      {(blueprint.key_ai_employee_roles || []).length > 0 && (
+        <div style={{ marginBottom: '30px' }}>
+          <h3 style={{
+            color: '#495057',
+            fontSize: '20px',
+            fontWeight: 'bold',
+            margin: '0 0 20px 0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            👥 Key AI Employee Roles
+          </h3>
+          <div style={{
+            display: 'grid',
+            gap: '20px',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))'
+          }}>
+            {(blueprint.key_ai_employee_roles || []).map((role, index) => (
+              <div key={index} style={{
+                backgroundColor: '#f8f9fa',
+                padding: '20px',
               borderRadius: '8px',
               border: '1px solid #dee2e6'
             }}>
@@ -197,7 +212,7 @@ const BlueprintDisplay: React.FC<BlueprintDisplayProps> = ({ blueprint }) => {
                   paddingLeft: '20px',
                   color: '#495057'
                 }}>
-                  {role.responsibilities?.map((responsibility, respIndex) => (
+                  {(role.responsibilities || []).map((responsibility, respIndex) => (
                     <li key={respIndex} style={{ 
                       marginBottom: '8px',
                       lineHeight: '1.5',
@@ -209,46 +224,51 @@ const BlueprintDisplay: React.FC<BlueprintDisplayProps> = ({ blueprint }) => {
                 </ul>
               </div>
             </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Initial SOP Ideas */}
-      <div style={{ marginBottom: '0' }}>
-        <h3 style={{ 
-          color: '#495057', 
-          fontSize: '20px', 
-          fontWeight: 'bold', 
-          margin: '0 0 20px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          📋 Initial SOP Ideas
-        </h3>
-        <div style={{ 
-          backgroundColor: '#fff3cd', 
-          padding: '20px', 
-          borderRadius: '8px',
-          border: '1px solid #ffeaa7'
-        }}>
-          <ol style={{ 
-            margin: '0', 
-            paddingLeft: '20px',
-            color: '#856404'
+      {(blueprint.initial_sop_ideas || []).length > 0 && (
+        <div style={{ marginBottom: '0' }}>
+          <h3 style={{
+            color: '#495057',
+            fontSize: '20px',
+            fontWeight: 'bold',
+            margin: '0 0 20px 0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
-            {blueprint.initial_sop_ideas?.map((sop, index) => (
-              <li key={index} style={{ 
-                marginBottom: '12px',
-                lineHeight: '1.6',
-                fontSize: '15px'
-              }}>
-                {sop}
-              </li>
-            ))}
-          </ol>
+            📋 Initial SOP Ideas
+          </h3>
+          <div style={{
+            backgroundColor: '#fff3cd',
+            padding: '20px',
+            borderRadius: '8px',
+            border: '1px solid #ffeaa7'
+          }}>
+            <ol style={{
+              margin: '0',
+              paddingLeft: '20px',
+              color: '#856404'
+            }}>
+              {(blueprint.initial_sop_ideas || []).map((sop, index) => (
+                <li key={index} style={{
+                  marginBottom: '12px',
+                  lineHeight: '1.6',
+                  fontSize: '15px'
+                }}>
+                  {sop}
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
-      </div>
+      )}
+      {/* TODO: Add rendering for other new fields from BlueprintSuccess if desired */}
+      {/* e.g., summary, vision, values etc. */}
     </div>
   )
 }

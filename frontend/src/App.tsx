@@ -9,8 +9,8 @@ import {
   getAuthToken, 
   logoutUser,
   TaskSubmissionResponse, 
-  TaskStatusResponse, 
-  TaskResult,
+  // TaskStatusResponse, // Removed as taskResult now uses AppTaskResult
+  TaskResult, // This is from apiService.ts, potentially remove if parseBlueprint is removed
   UserRegistrationResponse 
 } from './apiService'
 import BlueprintDisplay from './components/BlueprintDisplay'
@@ -71,7 +71,7 @@ function App() {
   const [submittedTaskId, setSubmittedTaskId] = useState<string | null>(null)
   // Updated type for taskResult state
   const [taskResult, setTaskResult] = useState<AppTaskResult | null>(null)
-  const [parsedBlueprint, setParsedBlueprint] = useState<TaskResult | null>(null) // This still uses TaskResult from apiService.ts
+  // const [parsedBlueprint, setParsedBlueprint] = useState<TaskResult | null>(null) // Removed
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -116,8 +116,10 @@ function App() {
       setAuthUsername('')
       setAuthEmail('')
       setAuthPassword('')
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Registration failed')
+    } catch (error: any) { // Updated to 'error: any' for more flexible property access
+      const message = error.response?.data?.detail || error.message || 'Registration failed. Please try again.';
+      setAuthError(message);
+      console.error('Registration error:', error); // It's good practice to log the original error object
     } finally {
       setAuthLoading(false)
     }
@@ -148,8 +150,10 @@ function App() {
       setCurrentUser(userToSet);
       setAuthUsername('')
       setAuthPassword('')
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Login failed')
+    } catch (error: any) { // Updated to 'error: any' for more flexible property access
+      const message = error.response?.data?.detail || error.message || 'Login failed. Please check your credentials.';
+      setAuthError(message);
+      console.error('Login error:', error); // It's good practice to log the original error object
     } finally {
       setAuthLoading(false)
     }
@@ -161,7 +165,7 @@ function App() {
     setCurrentUser(null)
     setSubmittedTaskId(null)
     setTaskResult(null)
-    setParsedBlueprint(null)
+    // setParsedBlueprint(null) // Removed
     setError(null)
   }
 
@@ -175,7 +179,7 @@ function App() {
     setIsLoading(true)
     setError(null)
     setTaskResult(null)
-    setParsedBlueprint(null)
+    // setParsedBlueprint(null) // Removed
     setSubmittedTaskId(null)
 
     try {
@@ -194,38 +198,24 @@ function App() {
     setIsLoading(true)
     setError(null)
     setTaskResult(null)
-    setParsedBlueprint(null)
+    // setParsedBlueprint(null) // Removed
 
     try {
       // Assuming getTaskStatus from apiService will be updated to return AppTaskResult compatible structure
       const data: AppTaskResult | null = await getTaskStatus(submittedTaskId) as AppTaskResult | null;
       setTaskResult(data)
       
-      // The new 'TaskResult' (AppTaskResult) contains the 'result' field directly.
-      // 'parsedBlueprint' state might become redundant or needs to align with 'TaskResultData'
-      // For now, let's try to populate parsedBlueprint if data.result.blueprint exists
-      if (data?.result?.blueprint) {
-        // We need to ensure the structure from data.result fits the 'TaskResult' type expected by parsedBlueprint
-        // This might require adjusting the 'parseBlueprint' function or how 'parsedBlueprint' state is used.
-        // For now, if we have a blueprint, let's assume it's the main thing for parsedBlueprint.
-        // This is a temporary alignment, ideally types should be consistent.
-        const agentResult: TaskResult = { // This is the type from apiService.ts
-            blueprint: data.result.blueprint as any, // Cast as any to fit, needs proper mapping
-            model_used: data.result.model_used,
-            workflow_type: data.result.workflow_type,
-            validation_result: data.result.validation_result,
-            workflow_steps: data.result.workflow_steps,
-            // error field needs to be mapped if present in data.result.blueprint
-        };
-        if ('error' in data.result.blueprint) {
-            agentResult.error = (data.result.blueprint as BlueprintError).error;
-        }
-        setParsedBlueprint(agentResult);
-      } else if (data?.task_details_from_backend) { // If no direct blueprint, try parsing from details
-        const blueprintFromDetails = parseBlueprint(data.task_details_from_backend);
-        setParsedBlueprint(blueprintFromDetails);
-      }
-
+      // Logic for parsedBlueprint removed as the state itself is removed.
+      // The main display logic now directly uses taskResult.result.blueprint.
+      // If parseBlueprint function is still needed for some edge cases with task_details_from_backend,
+      // its output would need to be handled differently or merged into taskResult state.
+      // For now, removing its usage here simplifies things based on primary display logic.
+      // if (data?.task_details_from_backend && !data?.result?.blueprint) {
+      //   const blueprintFromDetails = parseBlueprint(data.task_details_from_backend);
+      //   // How to use blueprintFromDetails now? Maybe update taskResult directly?
+      //   // This part needs further thought if task_details_from_backend is a critical fallback.
+      //   // For now, main display relies on data.result.blueprint.
+      // }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred')
