@@ -3,14 +3,14 @@ import './App.css'
 import { 
   submitNewTask, 
   getTaskStatus, 
-  parseBlueprint, 
+  // parseBlueprint, // Removed as it's no longer used
   registerUser, 
   loginUser, 
   getAuthToken, 
   logoutUser,
   TaskSubmissionResponse, 
   // TaskStatusResponse, // Removed as taskResult now uses AppTaskResult
-  TaskResult, // This is from apiService.ts, potentially remove if parseBlueprint is removed
+  // TaskResult, // Removed as it's no longer used in App.tsx
   UserRegistrationResponse 
 } from './apiService'
 import BlueprintDisplay from './components/BlueprintDisplay'
@@ -210,12 +210,11 @@ function App() {
       // If parseBlueprint function is still needed for some edge cases with task_details_from_backend,
       // its output would need to be handled differently or merged into taskResult state.
       // For now, removing its usage here simplifies things based on primary display logic.
-      // if (data?.task_details_from_backend && !data?.result?.blueprint) {
-      //   const blueprintFromDetails = parseBlueprint(data.task_details_from_backend);
-      //   // How to use blueprintFromDetails now? Maybe update taskResult directly?
-      //   // This part needs further thought if task_details_from_backend is a critical fallback.
-      //   // For now, main display relies on data.result.blueprint.
-      // }
+      // The main display logic now directly uses taskResult.result.blueprint.
+      // If task_details_from_backend was a critical fallback, its parsing (via parseBlueprint)
+      // and subsequent data merging/display would need to be explicitly handled here.
+      // Given the current structure, if data.result.blueprint is null/undefined,
+      // the display logic has fallbacks for "Raw Task Details from Bridge" or "No detailed result".
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred')
