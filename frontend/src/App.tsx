@@ -538,7 +538,7 @@ function App() {
           <p style={{fontWeight: 'bold'}}>Task Overview (ID: {taskResult.task_id}):</p>
           <p>Status: <span style={{fontWeight: 'bold'}}>{formatStatus(taskResult.status)}</span></p>
           {taskResult.target_company_name && <p>Target Company: {taskResult.target_company_name}</p>}
-          <p>Last Updated: {new Date(taskResult.updated_at).toLocaleString()}</p>
+          <p>Last Updated: {taskResult.updated_at ? new Date(taskResult.updated_at).toLocaleString() : 'N/A'}</p>
           <hr style={{margin: "15px 0"}}/>
 
           {/* Display based on taskResult.result and its blueprint field */}

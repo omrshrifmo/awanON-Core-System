@@ -213,6 +213,20 @@ def callback(ch, method, properties, body):
         'target_company_name': target_company_name
     }
 
+    # Ensure 'task_id' is available in this scope, or extract from result_message if necessary
+    # Assuming task_id was part of the initial message or derived earlier in the callback
+    task_id_for_log = result_message.get('task_id', 'UNKNOWN_TASK_ID') # Get task_id from result_message or use a placeholder
+
+    logging.info(f"Task ID {task_id_for_log}: Publishing result_message. Blueprint content (first 500 chars): {str(result_message.get('result', {}).get('blueprint', 'N/A'))[:500]}")
+
+    blueprint_content = result_message.get('result', {}).get('blueprint')
+    if isinstance(blueprint_content, dict) and 'error' in blueprint_content:
+        logging.error(f"Task ID {task_id_for_log}: Blueprint field in result_message contains an error object: {blueprint_content}")
+    elif blueprint_content is None:
+        logging.warning(f"Task ID {task_id_for_log}: Blueprint field in result_message is None.")
+    elif not blueprint_content: # Catches empty string, empty dict, empty list etc.
+        logging.warning(f"Task ID {task_id_for_log}: Blueprint field in result_message is empty or falsy: '{blueprint_content}'")
+
     try:
         ch.basic_publish(
             exchange='',

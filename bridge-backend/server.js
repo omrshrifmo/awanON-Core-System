@@ -177,6 +177,7 @@ while (true) {
                 try {
                     const messageContent = msg.content.toString();
                     responseData = JSON.parse(messageContent);
+                    console.log(`Bridge received message. Task ID: ${responseData.task_id || 'N/A'}. Full content:`, JSON.stringify(responseData, null, 2));
                       parsedTaskId = responseData?.task_id; // Get task_id early
                     console.log(` Content:`, responseData);
 
