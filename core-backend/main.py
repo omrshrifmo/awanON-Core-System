@@ -3,6 +3,7 @@ import json
 import uuid
 import logging
 import pika
+from urllib.parse import urlparse # Ensure this is at the top
 from datetime import timedelta
 from fastapi import FastAPI, HTTPException, BackgroundTasks, status, Request, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,21 +27,43 @@ logging.basicConfig(level=logging.INFO, format='[CoreAPI] %(asctime)s - %(leveln
 
 # RabbitMQ Configuration from Environment Variables
 RABBITMQ_URL = os.getenv('RABBITMQ_URL')
+RABBITMQ_VHOST = None # Initialize RABBITMQ_VHOST
+
 if RABBITMQ_URL:
-    from urllib.parse import urlparse
+    logging.info(f"Parsing RabbitMQ URL for connection parameters.")
+    # Mask password in log
+    # Ensure RABBITMQ_PASS is defined before this line if it's used from else block or globally
+    # For safety, re-fetch RABBITMQ_PASS if it's only defined in the else block or ensure global scope
+    temp_pass_for_logging = os.getenv('RABBITMQ_PASS', '****') # Default to **** if not set globally yet
+    if RABBITMQ_URL and '@' in RABBITMQ_URL:
+        url_parts = RABBITMQ_URL.split('@')
+        credentials_part = url_parts[0].split('//')[1]
+        if ':' in credentials_part:
+             temp_pass_for_logging = credentials_part.split(':')[1]
+
+    logging_url = RABBITMQ_URL.replace(temp_pass_for_logging, "****") if temp_pass_for_logging else RABBITMQ_URL
+    logging.info(f"Original RabbitMQ URL (password masked): {logging_url}")
+
     parsed_url = urlparse(RABBITMQ_URL)
-    RABBITMQ_HOST = parsed_url.hostname or 'rabbitmq'
-    RABBITMQ_PORT = parsed_url.port or 5672
-    RABBITMQ_USER = parsed_url.username or 'user'
-    RABBITMQ_PASS = parsed_url.password or 'password'
-    # Ensure RABBITMQ_PORT is an integer
-    if isinstance(RABBITMQ_PORT, str):
-        RABBITMQ_PORT = int(RABBITMQ_PORT)
+    RABBITMQ_HOST = parsed_url.hostname
+    RABBITMQ_PORT = parsed_url.port
+    RABBITMQ_USER = parsed_url.username
+    RABBITMQ_PASS = parsed_url.password # This will be the one from the URL
+
+    # Extract vhost, remove leading '/' if present
+    RABBITMQ_VHOST = parsed_url.path.lstrip('/') if parsed_url.path else None
+    if not RABBITMQ_VHOST: # If path is empty or just '/', default it
+         RABBITMQ_VHOST = 'vbjaudbu' # Default to specific vhost if not in URL path
+    logging.info(f"Parsed RabbitMQ VHost: {RABBITMQ_VHOST}")
+
 else:
-    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
+    logging.info("RabbitMQ URL not found, using individual environment variables.")
+    RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
     RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
-    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'user')
-    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'password')
+    RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
+    RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'guest')
+    RABBITMQ_VHOST = os.getenv('RABBITMQ_VHOST', 'vbjaudbu') # Default to specific vhost
+    logging.info(f"Using RabbitMQ VHost from individual env vars (or default): {RABBITMQ_VHOST}")
 
 TARGET_QUEUES = {
     "tswiqon": "tswiqon_tasks"  # Map target company name to its specific queue
@@ -125,11 +148,31 @@ app.include_router(auth_router)
 
 # --- RabbitMQ Connection Helper ---
 def get_rabbitmq_connection_params():
+    # RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_VHOST are now expected to be set globally (or module-level)
+    # by the logic above.
+
+    if not RABBITMQ_USER or not RABBITMQ_PASS: # Should not happen if variables are correctly parsed/defaulted
+        logging.error("RabbitMQ username or password not set. Cannot create credentials.")
+        raise ValueError("RabbitMQ username or password not configured.")
+
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
+
+    # Determine vhost_to_use explicitly
+    # The global RABBITMQ_VHOST should be correctly set by the parsing logic or fallbacks already.
+    # If it somehow ended up as None or empty string from parsing an actual URL like amqp://host// (empty path)
+    # then default it here again.
+    vhost_to_use = RABBITMQ_VHOST
+    if not vhost_to_use: # Final safety net
+        vhost_to_use = 'vbjaudbu'
+        logging.warning(f"RabbitMQ VHost was empty or None after parsing/env fallback, defaulting to: {vhost_to_use}")
+
+    logging.info(f"Attempting RabbitMQ connection with: Host={RABBITMQ_HOST}, Port={RABBITMQ_PORT}, VHost={vhost_to_use}, User={RABBITMQ_USER}")
+
     return pika.ConnectionParameters(
         host=RABBITMQ_HOST,
         port=RABBITMQ_PORT,
         credentials=credentials,
+        virtual_host=vhost_to_use, # Crucial: ensure this is used
         heartbeat=600,
         blocked_connection_timeout=300
     )
