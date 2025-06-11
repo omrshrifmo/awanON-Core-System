@@ -29,8 +29,10 @@ async def health_check_endpoint():
 
 def run_fastapi_health_check():
     port = int(os.getenv("PORT", "8080")) # Use PORT from Cloud Run, default 8080
-    # Logging is configured globally above
-    uvicorn.run(health_app, host="0.0.0.0", port=port, log_level="info")
+    logging.info(f"HEALTH_CHECK: Attempting to start Uvicorn on host 0.0.0.0 port {port} for health endpoint /healthz.")
+    # Using log_config=None to prevent Uvicorn from overriding root logger, if desired.
+    # Otherwise, uvicorn's default log_level="info" is often acceptable.
+    uvicorn.run(health_app, host="0.0.0.0", port=port, log_config=None)
 # --- End FastAPI Health Check ---
 
 
@@ -323,19 +325,24 @@ def start_listening():
 
 if __name__ == '__main__':
     try:
-        # Start FastAPI health check in a daemon thread
+        # Start FastAPI health check in a daemon thread VERY EARLY
         health_check_port = int(os.getenv("PORT", "8080"))
-        logging.info(f"Attempting to start FastAPI health check server on port {health_check_port}...")
+        # Note: The logging for run_fastapi_health_check itself will indicate port.
+        # This log is about the intent to start the thread.
+        logging.info(f"Main thread: Initializing FastAPI health check on port {health_check_port} in a separate thread...")
         health_thread = threading.Thread(target=run_fastapi_health_check, daemon=True)
         health_thread.start()
-        logging.info("Health check server thread started.")
+        logging.info("Main thread: Health check server thread initiated.")
 
-        logging.info("Initializing RAG system: Creating/Loading FAISS index...")
+        logging.info("Main thread: Starting RAG initialization and RabbitMQ listener setup...")
+        logging.info("Main thread: Initializing RAG system: Creating/Loading FAISS index...") # Retained original log for step clarity
         rag_utils.create_and_save_faiss_index() # Ensure index is ready on startup
-        logging.info("FAISS index initialization complete.")
+        logging.info("Main thread: FAISS index initialization complete.")
 
+        logging.info("Main thread: Starting RabbitMQ listener (start_listening())...") # Added log before blocking call
         start_listening()
+        logging.info("Main thread: start_listening() returned, script might be ending.") # Should not be reached if start_listening loops indefinitely
     except KeyboardInterrupt:
-        logging.info("TswiqON Agent shutting down...")
+        logging.info("Main thread: KeyboardInterrupt received. TswiqON Agent shutting down...")
     except Exception as e:
-        logging.critical(f"TswiqON Agent failed to start: {e}")
+        logging.critical(f"Main thread: An unhandled exception occurred: {e}", exc_info=True)
