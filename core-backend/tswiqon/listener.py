@@ -324,25 +324,46 @@ def start_listening():
 
 
 if __name__ == '__main__':
+    # Ensure logging is configured early (already done at global scope)
+    # logging.basicConfig(...)
+
+    logging.info("Main thread: Initializing listener service...")
+
+    # Start health check thread early
+    health_thread = threading.Thread(target=run_fastapi_health_check, daemon=True)
+    health_thread.start()
+    logging.info("Main thread: Health check server thread started.")
+
+    main_tasks_failed = False
     try:
-        # Start FastAPI health check in a daemon thread VERY EARLY
-        health_check_port = int(os.getenv("PORT", "8080"))
-        # Note: The logging for run_fastapi_health_check itself will indicate port.
-        # This log is about the intent to start the thread.
-        logging.info(f"Main thread: Initializing FastAPI health check on port {health_check_port} in a separate thread...")
-        health_thread = threading.Thread(target=run_fastapi_health_check, daemon=True)
-        health_thread.start()
-        logging.info("Main thread: Health check server thread initiated.")
+        logging.info("Main thread: Starting RAG initialization and RabbitMQ listener setup...") # Combined log
+        logging.info("Main thread: Initializing RAG system: Creating/Loading FAISS index...")
+        rag_utils.create_and_save_faiss_index() # Assuming this can raise exceptions
+        logging.info("Main thread: RAG system initialization complete.")
 
-        logging.info("Main thread: Starting RAG initialization and RabbitMQ listener setup...")
-        logging.info("Main thread: Initializing RAG system: Creating/Loading FAISS index...") # Retained original log for step clarity
-        rag_utils.create_and_save_faiss_index() # Ensure index is ready on startup
-        logging.info("Main thread: FAISS index initialization complete.")
+        logging.info("Main thread: Attempting to start RabbitMQ listener (start_listening())...")
+        start_listening() # This is expected to be a blocking call that loops internally
 
-        logging.info("Main thread: Starting RabbitMQ listener (start_listening())...") # Added log before blocking call
-        start_listening()
-        logging.info("Main thread: start_listening() returned, script might be ending.") # Should not be reached if start_listening loops indefinitely
+        # If start_listening() returns (e.g., due to a specific stop command or unhandled error causing its loop to break)
+        logging.info("Main thread: start_listening() has exited.")
+        main_tasks_failed = True # Treat this as a failure to keep listening
+
     except KeyboardInterrupt:
-        logging.info("Main thread: KeyboardInterrupt received. TswiqON Agent shutting down...")
+        logging.info("Main thread: Listener service interrupted by user (KeyboardInterrupt).")
+        main_tasks_failed = True # Consider this a reason to stop gracefully
     except Exception as e:
-        logging.critical(f"Main thread: An unhandled exception occurred: {e}", exc_info=True)
+        logging.critical(f"Main thread: An unhandled exception occurred during RAG init or start_listening call: {e}", exc_info=True)
+        main_tasks_failed = True
+    finally:
+        logging.info("Main thread: Main task execution block finished or encountered an error.")
+
+    if main_tasks_failed:
+        logging.warning("Main thread: Main tasks failed or were interrupted. Entering sleep loop to keep health check alive for Cloud Run.")
+        try:
+            while True:
+                time.sleep(300) # Sleep for 5 minutes indefinitely
+                logging.info("Main thread: Still alive in sleep loop (main tasks failed). Health check should be responsive.")
+        except KeyboardInterrupt:
+            logging.info("Main thread: Sleep loop interrupted. Exiting.")
+
+    logging.info("Main thread: Listener service shutting down.")
