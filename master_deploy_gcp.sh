@@ -146,6 +146,7 @@ gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" \
   --project "${GCP_PROJECT_ID}" \
   --set-env-vars="RABBITMQ_URL=${CLOUDAMQP_URL},GROQ_API_KEY=${GROQ_API_KEY},LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME}" \
   --port=8080 \
+  --startup-probe-http-path=/healthz \
   --memory=2Gi \
   --cpu=1 \
   --min-instances=0 \
