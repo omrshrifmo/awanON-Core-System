@@ -325,7 +325,6 @@ def start_listening():
 
 if __name__ == '__main__':
     # Ensure logging is configured early (already done at global scope)
-    # logging.basicConfig(...)
 
     logging.info("Main thread: Initializing listener service...")
 
@@ -334,36 +333,34 @@ if __name__ == '__main__':
     health_thread.start()
     logging.info("Main thread: Health check server thread started.")
 
-    main_tasks_failed = False
+    # main_tasks_failed = False # Not strictly needed in this simplified version
     try:
-        logging.info("Main thread: Starting RAG initialization and RabbitMQ listener setup...") # Combined log
-        logging.info("Main thread: Initializing RAG system: Creating/Loading FAISS index...")
-        rag_utils.create_and_save_faiss_index() # Assuming this can raise exceptions
-        logging.info("Main thread: RAG system initialization complete.")
+        # logging.info("Main thread: Starting RAG initialization and RabbitMQ listener setup...")
+        # logging.info("Main thread: Initializing RAG system: Creating/Loading FAISS index...")
+        # rag_utils.create_and_save_faiss_index() # Assuming this can raise exceptions
+        # logging.info("Main thread: RAG system initialization complete.")
 
-        logging.info("Main thread: Attempting to start RabbitMQ listener (start_listening())...")
-        start_listening() # This is expected to be a blocking call that loops internally
+        # logging.info("Main thread: Attempting to start RabbitMQ listener (start_listening())...")
+        # start_listening() # This is expected to be a blocking call that loops internally
 
-        # If start_listening() returns (e.g., due to a specific stop command or unhandled error causing its loop to break)
-        logging.info("Main thread: start_listening() has exited.")
-        main_tasks_failed = True # Treat this as a failure to keep listening
+        # logging.info("Main thread: start_listening() has exited.")
+        # main_tasks_failed = True # Treat this as a failure to keep listening
+
+        logging.info("Main thread: Simplified startup for port test. RAG and RabbitMQ listener are bypassed. Entering keep-alive sleep.")
+        while True:
+            time.sleep(3600) # Sleep for 1 hour
+            logging.info("Main thread: Still alive in simplified test mode. Health check should be responsive.")
 
     except KeyboardInterrupt:
-        logging.info("Main thread: Listener service interrupted by user (KeyboardInterrupt).")
-        main_tasks_failed = True # Consider this a reason to stop gracefully
+        logging.info("Main thread (simplified test): Listener service interrupted by user.")
+        # main_tasks_failed = True
     except Exception as e:
-        logging.critical(f"Main thread: An unhandled exception occurred during RAG init or start_listening call: {e}", exc_info=True)
-        main_tasks_failed = True
-    finally:
-        logging.info("Main thread: Main task execution block finished or encountered an error.")
+        logging.critical(f"Main thread (simplified test): An unhandled exception occurred: {e}", exc_info=True)
+        # main_tasks_failed = True
+    # finally: # Finally block not strictly needed if the loop is the main point
+        # logging.info("Main thread: Main task execution block finished or encountered an error.")
 
-    if main_tasks_failed:
-        logging.warning("Main thread: Main tasks failed or were interrupted. Entering sleep loop to keep health check alive for Cloud Run.")
-        try:
-            while True:
-                time.sleep(300) # Sleep for 5 minutes indefinitely
-                logging.info("Main thread: Still alive in sleep loop (main tasks failed). Health check should be responsive.")
-        except KeyboardInterrupt:
-            logging.info("Main thread: Sleep loop interrupted. Exiting.")
-
-    logging.info("Main thread: Listener service shutting down.")
+    # The script will only reach here if the keep-alive loop is broken by an unhandled exception
+    # not caught by the generic Exception, or if a system exit signal is received.
+    # The main_tasks_failed logic is removed as the primary purpose now is just to keep alive.
+    logging.info("Main thread: Listener service (simplified test mode) shutting down.")
