@@ -145,19 +145,26 @@ def research_industry(state: AgentState) -> AgentState:
     logging.info(f"NODE: Finished research_industry. Research findings (first 100 chars): {research_findings_str[:100]}...")
     return state # type: ignore
 
-def generate_blueprint(state: AgentState) -> AgentState:
+def generate_blueprint(state: AgentState) -> dict:
     """Step 3: Generate initial company blueprint using RAG research findings"""
     logging.info(f"NODE: Starting generate_blueprint. Using research (first 100 chars): {str(state.get('research_findings'))[:100]}...")
     
     if state.get('error'):
         logging.warning("generate_blueprint: Skipping due to previous error in state.")
-        return state # type: ignore
+        return {"error": state.get('error'), "blueprint_draft": {"error": "Skipped due to prior error", "message": state.get('error')}}
         
     analysis = state.get('analysis_result', {})
     research = state.get('research_context', {})
     research_findings = state.get('research_findings', '')
+
+    if research_findings is None:
+        logging.warning("generate_blueprint: research_findings is None. Using empty string for context.")
+        research_findings = ""
+    elif not isinstance(research_findings, str):
+        logging.warning(f"generate_blueprint: research_findings is not a string (type: {type(research_findings)}). Converting to string.")
+        research_findings = str(research_findings)
     
-    system_prompt = (
+    system_prompt_for_llm = ( # Renamed to avoid conflict with logging variable name
         "You are an expert strategic business consultant AI. Generate a detailed company blueprint "
         "based on the analysis and research findings provided. Use the research findings from the "
         "knowledge base to inform your blueprint design, especially for SOPs and best practices. "
@@ -187,45 +194,69 @@ def generate_blueprint(state: AgentState) -> AgentState:
     )
     
     messages = [
-        {"role": "system", "content": system_prompt_blueprint_generation}, # Renamed var for logging
+        {"role": "system", "content": system_prompt_for_llm},
         {"role": "user", "content": user_content}
     ]
     
-    blueprint_draft_str = "" # For logging
+    return_value_dict: Dict[str, Any] = {}
+    llm_response_content_for_log = ""
+
     try:
-        logging.info(f"generate_blueprint: Sending prompt to LLM (snippet): {system_prompt_blueprint_generation[:100]}... Context (snippet): {user_content[:100]}...")
+        logging.info(f"generate_blueprint: Sending prompt to LLM (snippet): {system_prompt_for_llm[:100]}... Context (snippet): {user_content[:100]}...")
         response = completion(
             model=state['model_name'],
             messages=messages,
             response_format={"type": "json_object"}
         )
         
-        llm_response_str = response.choices[0].message.content
-        logging.debug(f"generate_blueprint: Raw LLM response: {llm_response_str}")
-        blueprint_draft = json.loads(llm_response_str)
-        blueprint_draft_str = llm_response_str # For logging
-        state['blueprint_draft'] = blueprint_draft
-        logging.info("Initial blueprint generated with RAG context") # Original log kept
-        
+        llm_response_content = response.choices[0].message.content
+        logging.debug(f"generate_blueprint: Raw LLM response: {llm_response_content}")
+        llm_response_content_for_log = llm_response_content # For logging at the end
+
+        parsed_output = json.loads(llm_response_content)
+
+        if not parsed_output or not isinstance(parsed_output, dict) or parsed_output == {}:
+            logging.warning("generate_blueprint: Initial blueprint generation by LLM was empty or invalid JSON object.")
+            return_value_dict = {
+                "blueprint_draft": {"error": "LLM_EMPTY_RESPONSE", "message": "Initial blueprint from LLM was empty or invalid."},
+                "error": "Initial blueprint generation by LLM was empty or invalid."
+            }
+        else:
+            logging.info("Initial blueprint generated with RAG context")
+            return_value_dict = {"blueprint_draft": parsed_output}
+
+    except json.JSONDecodeError as e:
+        logging.error(f"generate_blueprint: Failed to parse JSON from LLM response: {e}. Response content (first 1000 chars): {llm_response_content[:1000]}", exc_info=True)
+        return_value_dict = {
+            "blueprint_draft": {"error": "LLM_JSON_PARSE_ERROR", "message": f"Failed to parse blueprint JSON from LLM: {str(e)}", "raw_output": llm_response_content[:1000]},
+            "error": "Failed to parse initial blueprint JSON from LLM."
+        }
     except Exception as e:
-        logging.error(f"Error in generate_blueprint: {e}", exc_info=True) # Added exc_info
-        state['error'] = f"Blueprint generation failed: {str(e)}"
+        logging.error(f"Error in generate_blueprint: {e}", exc_info=True)
+        return_value_dict = {
+            "blueprint_draft": {"error": "LLM_GENERAL_ERROR", "message": f"LLM call failed: {str(e)}"},
+            "error": f"Blueprint generation failed: {str(e)}"
+        }
 
-    logging.info(f"NODE: Finished generate_blueprint. Initial blueprint (first 100 chars): {blueprint_draft_str[:100]}...")
-    return state # type: ignore
+    logging.info(f"NODE: Finished generate_blueprint. Initial blueprint (first 200 chars): {str(return_value_dict.get('blueprint_draft'))[:200]}...")
+    return return_value_dict
 
-def review_and_refine(state: AgentState) -> AgentState:
+def review_and_refine(state: AgentState) -> dict: # Return type changed to dict
     """Step 4: Review and refine the blueprint"""
-    logging.info(f"NODE: Starting review_and_refine. Initial blueprint (first 100 chars): {str(state.get('blueprint_draft'))[:100]}...")
+    logging.info(f"NODE: Starting review_and_refine. Initial blueprint (first 200 chars): {str(state.get('blueprint_draft'))[:200]}...")
     
     if state.get('error'):
         logging.warning("review_and_refine: Skipping due to previous error in state.")
-        return state # type: ignore
+        return {"error": state.get('error'), "refined_blueprint": {"error": "Skipped due to prior error", "message": state.get('error')}}
         
-    blueprint = state.get('blueprint_draft', {})
-    blueprint_str_for_log = json.dumps(blueprint) # For logging
+    blueprint_draft = state.get('blueprint_draft', {})
+    if not blueprint_draft or isinstance(blueprint_draft.get("error"), str): # Check if previous step had an error
+        logging.warning(f"review_and_refine: Skipping because blueprint_draft contains an error or is empty: {blueprint_draft}")
+        return {"error": "Refinement skipped due to error in previous step.", "refined_blueprint": blueprint_draft}
+
+    blueprint_str_for_log = json.dumps(blueprint_draft)
     
-    system_prompt_review_refine = ( # Renamed for clarity
+    system_prompt_review_refine = (
         "You are a business strategy reviewer AI. Review the provided company blueprint and refine it. "
         "Ensure all required fields are present and well-structured. The output MUST be a valid JSON "
         "object that conforms to the CompanyBlueprintV1 Pydantic model. "
@@ -245,7 +276,8 @@ def review_and_refine(state: AgentState) -> AgentState:
         {"role": "user", "content": f"Review and refine this blueprint: {blueprint_str_for_log}"}
     ]
     
-    refined_blueprint_json_str = "" # For logging
+    return_value_dict: Dict[str, Any] = {}
+    llm_response_content_for_log = ""
     try:
         logging.info(f"review_and_refine: Sending prompt to LLM (snippet): {system_prompt_review_refine[:100]}... Blueprint (snippet): {blueprint_str_for_log[:100]}...")
         response = completion(
@@ -254,33 +286,54 @@ def review_and_refine(state: AgentState) -> AgentState:
             response_format={"type": "json_object"}
         )
         
-        llm_response_str = response.choices[0].message.content
-        logging.debug(f"review_and_refine: Raw LLM response: {llm_response_str}")
-        refined_blueprint = json.loads(llm_response_str)
-        refined_blueprint_json_str = llm_response_str # For logging
-        state['refined_blueprint'] = refined_blueprint
-        logging.info("Blueprint refined") # Original log kept
-        
-    except Exception as e:
-        logging.error(f"Error in review_and_refine: {e}", exc_info=True) # Added exc_info
-        state['error'] = f"Blueprint refinement failed: {str(e)}"
-        
-    logging.info(f"NODE: Finished review_and_refine. Refined blueprint (first 100 chars): {refined_blueprint_json_str[:100]}...")
-    return state # type: ignore
+        llm_response_content = response.choices[0].message.content
+        logging.debug(f"review_and_refine: Raw LLM response: {llm_response_content}")
+        llm_response_content_for_log = llm_response_content
 
-def validate_output(state: AgentState) -> AgentState:
+        parsed_output = json.loads(llm_response_content)
+
+        if not parsed_output or not isinstance(parsed_output, dict) or parsed_output == {}:
+            logging.warning("review_and_refine: Refined blueprint from LLM was empty or invalid JSON object.")
+            return_value_dict = {
+                "refined_blueprint": {"error": "LLM_EMPTY_RESPONSE", "message": "Refined blueprint from LLM was empty or invalid."},
+                "error": "Refined blueprint from LLM was empty or invalid."
+            }
+        else:
+            logging.info("Blueprint refined")
+            return_value_dict = {"refined_blueprint": parsed_output}
+
+    except json.JSONDecodeError as e:
+        logging.error(f"review_and_refine: Failed to parse JSON from LLM response: {e}. Response content (first 1000 chars): {llm_response_content[:1000]}", exc_info=True)
+        return_value_dict = {
+            "refined_blueprint": {"error": "LLM_JSON_PARSE_ERROR", "message": f"Failed to parse refined blueprint JSON from LLM: {str(e)}", "raw_output": llm_response_content[:1000]},
+            "error": "Failed to parse refined blueprint JSON from LLM."
+        }
+    except Exception as e:
+        logging.error(f"Error in review_and_refine: {e}", exc_info=True)
+        return_value_dict = {
+            "refined_blueprint": {"error": "LLM_GENERAL_ERROR", "message": f"LLM call for refinement failed: {str(e)}"},
+            "error": f"Blueprint refinement failed: {str(e)}"
+        }
+        
+    logging.info(f"NODE: Finished review_and_refine. Refined blueprint (first 200 chars): {str(return_value_dict.get('refined_blueprint'))[:200]}...")
+    return return_value_dict
+
+def validate_output(state: AgentState) -> dict: # Return type changed to dict
     """Step 5: Validate the final blueprint against Pydantic model"""
-    logging.info(f"NODE: Starting validate_output. Refined blueprint (first 100 chars): {str(state.get('refined_blueprint'))[:100]}...")
+    logging.info(f"NODE: Starting validate_output. Refined blueprint (first 200 chars): {str(state.get('refined_blueprint'))[:200]}...")
     
     if state.get('error'):
         logging.warning("validate_output: Skipping due to previous error in state.")
-        return state # type: ignore
+        return {"error": state.get('error'), "final_blueprint": {"error": "Skipped due to prior error", "message": state.get('error')}, "validation_result": {"status":"skipped"}}
         
     refined_blueprint = state.get('refined_blueprint', {})
-    blueprint_to_validate_str = json.dumps(refined_blueprint) # For logging
+    if not refined_blueprint or isinstance(refined_blueprint.get("error"), str): # Check if previous step had an error
+        logging.warning(f"validate_output: Skipping because refined_blueprint contains an error or is empty: {refined_blueprint}")
+        return {"error": "Validation skipped due to error in previous step.", "final_blueprint": refined_blueprint, "validation_result": {"status":"skipped_due_to_error_in_refined_blueprint"}}
+
+    blueprint_to_validate_str = json.dumps(refined_blueprint)
     
-    # Enhanced system prompt for final validation and completion with explicit field requirements
-    system_prompt_validation = ( # Renamed for clarity
+    system_prompt_validation = (
         "You are a final validation AI. Create a complete and valid company blueprint JSON. "
         "The output MUST be a valid JSON object that perfectly conforms to the CompanyBlueprintV1 model. "
         "Respond with *ONLY* the complete JSON object and nothing else. "
@@ -319,11 +372,13 @@ def validate_output(state: AgentState) -> AgentState:
     
     messages = [
         {"role": "system", "content": system_prompt_validation},
-        {"role": "user", "content": f"Create a complete blueprint based on: {task_context}\n\nRefine this existing blueprint: {blueprint_to_validate_str}"}
+        {"role": "user", "content": f"Create a complete blueprint based on: {task_context}\n\nUse this existing refined blueprint as a strong basis: {blueprint_to_validate_str}"}
     ]
     
-    final_blueprint_str = "" # For logging
-    validation_errors_json = "" # For logging
+    return_value_dict: Dict[str, Any] = {}
+    llm_response_content_for_log = ""
+    pydantic_validation_errors_log = ""
+
     try:
         logging.info(f"validate_output: Sending prompt to LLM (snippet): {system_prompt_validation[:100]}... Blueprint (snippet): {blueprint_to_validate_str[:100]}...")
         response = completion(
@@ -332,63 +387,81 @@ def validate_output(state: AgentState) -> AgentState:
             response_format={"type": "json_object"}
         )
         
-        llm_response_str = response.choices[0].message.content
-        logging.debug(f"validate_output: Raw LLM response: {llm_response_str}")
-        final_blueprint = json.loads(llm_response_str)
-        final_blueprint_str = llm_response_str # For logging
+        llm_response_content = response.choices[0].message.content
+        logging.debug(f"validate_output: Raw LLM response: {llm_response_content}")
+        llm_response_content_for_log = llm_response_content
         
-        # Validate against Pydantic model
-        try:
-            validated_blueprint = CompanyBlueprintV1(**final_blueprint)
-            state['final_blueprint'] = validated_blueprint.model_dump()
-            state['validation_result'] = {"status": "success", "message": "Blueprint validated successfully"}
-            logging.info("Blueprint validation successful") # Original log
-            
-        except ValidationError as e:
-            logging.error(f"Pydantic validation failed: {e}")
-            validation_errors_json = str(e) # For logging
-            
-            # Try to fix common validation issues programmatically
-            fixed_blueprint = final_blueprint.copy()
-            
-            # Ensure required fields exist with proper defaults
-            if 'company_name_suggestion' not in fixed_blueprint or not fixed_blueprint['company_name_suggestion']:
+        parsed_llm_output = json.loads(llm_response_content)
+
+        if not parsed_llm_output or not isinstance(parsed_llm_output, dict) or parsed_llm_output == {}:
+            logging.warning("validate_output: Final blueprint from LLM was empty or invalid JSON object.")
+            return_value_dict = {
+                "final_blueprint": {"error": "LLM_EMPTY_RESPONSE", "message": "Final blueprint from LLM was empty or invalid."},
+                "validation_result": {"status": "failed", "message": "LLM returned empty/invalid JSON for final blueprint."},
+                "error": "Final blueprint from LLM was empty or invalid."
+            }
+        else:
+            # Validate against Pydantic model
+            try:
+                validated_blueprint = CompanyBlueprintV1(**parsed_llm_output)
+                return_value_dict = {
+                    "final_blueprint": validated_blueprint.model_dump(),
+                    "validation_result": {"status": "success", "message": "Blueprint validated successfully"}
+                }
+                logging.info("Blueprint validation successful")
+            except ValidationError as e:
+                logging.error(f"Pydantic validation failed for LLM output: {e}")
+                pydantic_validation_errors_log = str(e)
+
+                # Attempt to fix common validation issues programmatically
+                fixed_blueprint = parsed_llm_output.copy() # Start with LLM's attempt
+                if 'company_name_suggestion' not in fixed_blueprint or not fixed_blueprint['company_name_suggestion']:
                 fixed_blueprint['company_name_suggestion'] = f"AI Solutions for {state['task_details'][:50]}"
             
             if 'specialization' not in fixed_blueprint or not fixed_blueprint['specialization']:
-                fixed_blueprint['specialization'] = state['task_details']
+                    fixed_blueprint['specialization'] = state.get('analysis_result', {}).get('business_domain', state['task_details'])
+                if 'mission_statement_draft' not in fixed_blueprint or len(fixed_blueprint.get('mission_statement_draft', '')) < 20:
+                    fixed_blueprint['mission_statement_draft'] = f"To revolutionize {fixed_blueprint['specialization']} through innovative AI solutions."
+                if not fixed_blueprint.get('key_ai_employee_roles'):
+                    fixed_blueprint['key_ai_employee_roles'] = [{"role_title": "AI Lead", "responsibilities": ["Lead AI strategy"], "reports_to": "CEO"}]
+                if not fixed_blueprint.get('initial_sop_ideas') or len(fixed_blueprint.get('initial_sop_ideas',[])) < 3 :
+                     fixed_blueprint['initial_sop_ideas'] = ["Client Onboarding", "Project Execution", "Quality Assurance"]
+                if 'estimated_time_to_operational_setup_days' not in fixed_blueprint :
+                     fixed_blueprint['estimated_time_to_operational_setup_days'] = 30
                 
-            if 'mission_statement_draft' not in fixed_blueprint or len(fixed_blueprint.get('mission_statement_draft', '')) < 20:
-                fixed_blueprint['mission_statement_draft'] = f"To revolutionize {state['task_details']} through innovative AI solutions that deliver exceptional value to our clients and transform the industry."
-                
-            if 'key_ai_employee_roles' not in fixed_blueprint or not isinstance(fixed_blueprint.get('key_ai_employee_roles'), list) or len(fixed_blueprint.get('key_ai_employee_roles', [])) == 0:
-                fixed_blueprint['key_ai_employee_roles'] = [{"role_title": "AI Lead", "responsibilities": ["Lead AI strategy"], "reports_to": "CEO"}] # Simplified
-                
-            if 'initial_sop_ideas' not in fixed_blueprint or not isinstance(fixed_blueprint.get('initial_sop_ideas'), list) or len(fixed_blueprint.get('initial_sop_ideas', [])) < 3:
-                fixed_blueprint['initial_sop_ideas'] = ["Client Onboarding", "Project Execution", "Quality Assurance"] # Simplified
-            
-            if 'estimated_time_to_operational_setup_days' not in fixed_blueprint:
-                fixed_blueprint['estimated_time_to_operational_setup_days'] = 30
-            
-            try:
-                # Try validation again with fixed blueprint
-                validated_blueprint = CompanyBlueprintV1(**fixed_blueprint)
-                state['final_blueprint'] = validated_blueprint.model_dump()
-                state['validation_result'] = {"status": "success_with_fixes", "message": "Blueprint validated after automatic fixes", "original_error": str(e)}
-                logging.info("Blueprint validation successful after automatic fixes")
-                
-            except ValidationError as e2:
-                logging.error(f"Validation failed even after fixes: {e2}")
-                validation_errors_json = str(e2) # For logging
-                state['validation_result'] = {"status": "failed", "message": str(e2), "blueprint": fixed_blueprint, "original_error": str(e)}
-                state['error'] = f"Validation failed: {str(e2)}"
-            
-    except Exception as e:
-        logging.error(f"Error in validate_output: {e}", exc_info=True) # Added exc_info
-        state['error'] = f"Final validation failed: {str(e)}"
+                try:
+                    validated_blueprint_after_fix = CompanyBlueprintV1(**fixed_blueprint)
+                    return_value_dict = {
+                        "final_blueprint": validated_blueprint_after_fix.model_dump(),
+                        "validation_result": {"status": "success_with_programmatic_fixes", "message": "Blueprint validated after programmatic fixes.", "original_llm_output": parsed_llm_output, "original_error": str(e)},
+                    }
+                    logging.info("Blueprint validation successful after programmatic fixes.")
+                except ValidationError as e2:
+                    logging.error(f"Validation failed even after programmatic fixes: {e2}")
+                    pydantic_validation_errors_log = str(e2)
+                    return_value_dict = {
+                        "final_blueprint": {"error": "VALIDATION_FAILED_POST_FIX", "message": str(e2), "attempted_fix_blueprint": fixed_blueprint, "original_llm_output": parsed_llm_output},
+                        "validation_result": {"status": "failed_after_fixes", "message": str(e2), "original_error": str(e)},
+                        "error": f"Validation failed after programmatic fixes: {str(e2)}"
+                    }
 
-    logging.info(f"NODE: Finished validate_output. Validation errors: {validation_errors_json}. Final blueprint (first 100 chars): {final_blueprint_str[:100]}...")
-    return state # type: ignore
+    except json.JSONDecodeError as e:
+        logging.error(f"validate_output: Failed to parse JSON from LLM response: {e}. Response content (first 1000 chars): {llm_response_content[:1000]}", exc_info=True)
+        return_value_dict = {
+            "final_blueprint": {"error": "LLM_JSON_PARSE_ERROR", "message": f"Failed to parse final blueprint JSON from LLM: {str(e)}", "raw_output": llm_response_content[:1000]},
+            "validation_result": {"status": "failed", "message": "LLM returned invalid JSON for final blueprint."},
+            "error": "Failed to parse final blueprint JSON from LLM."
+        }
+    except Exception as e:
+        logging.error(f"Error in validate_output: {e}", exc_info=True)
+        return_value_dict = {
+            "final_blueprint": {"error": "LLM_GENERAL_ERROR", "message": f"LLM call for validation failed: {str(e)}"},
+            "validation_result": {"status": "failed", "message": "LLM call for validation failed."},
+            "error": f"Final validation/blueprint generation failed: {str(e)}"
+        }
+
+    logging.info(f"NODE: Finished validate_output. Validation result: {return_value_dict.get('validation_result', {}).get('status')}. Final blueprint (first 200 chars): {str(return_value_dict.get('final_blueprint'))[:200]}...")
+    return return_value_dict
 
 def create_workflow(model_name: str) -> StateGraph:
     """Create the LangGraph workflow"""
@@ -404,18 +477,15 @@ def create_workflow(model_name: str) -> StateGraph:
 
     # Define conditional routing after analysis
     def should_proceed_to_research(state: AgentState) -> str:
-        # Default to True if 'is_blueprint_request' is missing, or if an error occurred in analysis
-        # The analyze_task node defaults is_blueprint_request to True on error to allow flow to continue.
-        # A more robust graph might have explicit error transitions from analyze_task to an error handling node or END.
         is_blueprint = state.get('is_blueprint_request', True)
 
-        # If a critical error occurred in analyze_task that should halt normal processing
-        if state.get('error') and not is_blueprint : # Example: if error exists AND it's not a blueprint request
-             logging.error(f"Critical error during analysis and not a blueprint request: {state.get('error')}")
-             # This specific condition might be better handled by analyze_task directly populating
-             # final_blueprint with an error and is_blueprint_request=False to go to handle_unsupported_task.
-             # For now, this logic primarily routes based on is_blueprint_request.
-             # If analysis has an error, it might still try to proceed as a blueprint request by default.
+        if state.get('error'): # If analysis itself failed and set an error
+             logging.warning(f"Conditional routing: Error detected in analysis_result: '{state.get('error')}'. Routing to handle_unsupported_task to ensure error is surfaced.")
+             # Even if is_blueprint_request was True by default on error, route to handle_unsupported_task if error exists.
+             # handle_unsupported_task can then decide if it's a blueprint error or a general analysis error.
+             # Or, could route to a generic error_handler node.
+             # For now, if analysis produces an error, it means we can't be sure it's a blueprint request.
+             return "handle_unsupported_task" # Or a new dedicated "handle_analysis_error" node
 
         logging.info(f"Conditional routing: is_blueprint_request = {is_blueprint}")
         if is_blueprint:
@@ -438,28 +508,38 @@ def create_workflow(model_name: str) -> StateGraph:
     workflow.add_edge("generate_blueprint", "review_and_refine")
     workflow.add_edge("review_and_refine", "validate_output")
     workflow.add_edge("validate_output", END)
-    workflow.add_edge("handle_unsupported_task", END) # Unsupported tasks go to END
+    workflow.add_edge("handle_unsupported_task", END)
     
     return workflow.compile()
 
 
 def handle_unsupported_task_node(state: AgentState) -> dict:
     logging.info(f"NODE: Starting handle_unsupported_task_node. Task details (first 100 chars): {str(state.get('task_details'))[:100]}...")
-    # Original log: logging.info("Unsupported task type received...") -> Covered by NODE log
-    error_message = "This agent is designed to generate company blueprints. The provided request does not appear to be for a blueprint."
-    error_payload = {"error": "Unsupported Task Type", "message": error_message}
+
+    error_message_from_state = state.get('error') # Check if error was passed from analysis
+    if error_message_from_state:
+        logging.warning(f"handle_unsupported_task_node: Handling error passed from previous node: {error_message_from_state}")
+        # Use the error from the state, or a generic one if it's not specific enough
+        error_type = "Upstream Error"
+        final_error_message = f"Task processing stopped due to error in a previous step: {error_message_from_state}"
+    else:
+        error_type = "Unsupported Task Type"
+        final_error_message = "This agent is designed to generate company blueprints. The provided request does not appear to be for a blueprint."
+        logging.info("Unsupported task type received (is_blueprint_request was false).")
+
+    error_payload = {"error": error_type, "message": final_error_message}
 
     logging.info(f"NODE: Finished handle_unsupported_task_node. Error: {error_payload.get('error')}, Message: {error_payload.get('message')}")
     return {
-        "final_blueprint": error_payload,
-        "validation_result": {"status": "failed", "message": error_message}, # Mimic validation failure
-        "error": error_message, # Set top-level error
-        "status_message": f"Task failed: {error_message}" # Added for clearer status
+        "final_blueprint": error_payload, # This key is expected by the final return logic
+        "validation_result": {"status": "failed", "message": final_error_message},
+        "error": final_error_message,
+        "status_message": f"Task failed: {final_error_message}"
     }
 
 def run_agent_workflow(task_details: str, target_company_name: str, model_name: str) -> Dict[str, Any]:
     """Run the complete LangGraph workflow"""
-    logging.info(f"Starting LangGraph workflow for: {target_company_name} (Task: {str(task_details)[:100]}...)") # Added task details to initial log
+    logging.info(f"NODE: Starting run_agent_workflow for: {target_company_name}. Task (first 100 chars): {str(task_details)[:100]}...")
     
     # Create workflow
     app = create_workflow(model_name)
@@ -481,17 +561,21 @@ def run_agent_workflow(task_details: str, target_company_name: str, model_name: 
     
     try:
         # Run the workflow
+        logging.info("Invoking agent workflow...")
         final_state = app.invoke(initial_state)
-        
+        logging.info("Agent workflow invocation complete.")
+
         if final_state.get('error'):
-            logging.error(f"Workflow completed with error: {final_state['error']}") # Added error log
+            logging.error(f"NODE: Workflow completed with error for Task ID (if available from state, else N/A). Error: {final_state['error']}")
+            # Attempt to get task_id from state if it was added, otherwise it won't be available here
+            # For now, task_id is not part of AgentState, so cannot log it here directly from final_state
             return {
                 "error": final_state['error'],
-                "status_message": final_state.get('status_message', final_state['error']), # Use specific status_message if available
-                "blueprint": final_state.get('final_blueprint', {}), # Include final_blueprint even if error
+                "status_message": final_state.get('status_message', final_state['error']),
+                "blueprint": final_state.get('final_blueprint', {}),
                 "workflow_type": "langgraph_multi_step",
                 "validation_result": final_state.get('validation_result', {}),
-                "partial_results": { # Keep partial results for debugging
+                "partial_results": {
                     "analysis": final_state.get('analysis_result', {}),
                     "research": final_state.get('research_context', {}),
                     "blueprint_draft": final_state.get('blueprint_draft', {}),
@@ -499,12 +583,12 @@ def run_agent_workflow(task_details: str, target_company_name: str, model_name: 
                 }
             }
         
-        logging.info(f"Workflow completed successfully for {target_company_name}. Final blueprint (snippet): {str(final_state.get('final_blueprint'))[:100]}...") # Added success log
+        logging.info(f"NODE: Workflow completed successfully for {target_company_name}. Final blueprint (first 200 chars): {str(final_state.get('final_blueprint'))[:200]}...")
         return {
             "blueprint": final_state.get('final_blueprint', {}),
             "workflow_type": "langgraph_multi_step",
             "validation_result": final_state.get('validation_result', {}),
-            "status_message": final_state.get('status_message', "Task completed successfully."), # Add status message
+            "status_message": final_state.get('status_message', "Task completed successfully."),
             "workflow_steps": {
                 "analysis": final_state.get('analysis_result', {}),
                 "research": final_state.get('research_context', {}),
@@ -514,9 +598,9 @@ def run_agent_workflow(task_details: str, target_company_name: str, model_name: 
         }
         
     except Exception as e:
-        logging.error(f"Workflow execution failed with unhandled exception: {e}", exc_info=True) # Log stack trace
+        logging.error(f"NODE: Workflow execution failed with unhandled exception: {e}", exc_info=True)
         return {
             "error": f"Workflow execution failed with unhandled exception: {str(e)}",
-            "status_message": "Critical workflow error.",
+            "status_message": "Critical workflow error. Unhandled exception.",
             "workflow_type": "langgraph_multi_step"
         }
