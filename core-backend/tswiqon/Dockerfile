@@ -20,6 +20,6 @@ COPY . .
 # Expose port 8080 for health checks (if implemented in listener.py)
 EXPOSE 8080
 
-# Command to run the listener script when the container starts
-# Ensure listener.py is executable or called with python
-CMD ["python", "listener.py"]
+# Command to run only the Uvicorn health check server for listener.py's health_app
+# This is for testing the health check endpoint in isolation.
+CMD ["python", "-c", "import os, uvicorn, logging; logging.basicConfig(level=logging.INFO); logging.info(f'Attempting to run Uvicorn on port {os.getenv(\"PORT\", \"8080\")} for health_app'); uvicorn.run('listener:health_app', host='0.0.0.0', port=int(os.getenv('PORT', '8080')), log_config=None)"]
