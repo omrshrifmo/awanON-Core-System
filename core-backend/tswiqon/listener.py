@@ -201,17 +201,44 @@ def callback(ch, method, properties, body):
     logging.info(f"Received task ID: {task_id} for '{target_company_name}' with details: {details}")
 
     # Use LangGraph workflow instead of single LLM call
-    blueprint_result = run_agent_workflow(details, target_company_name, LITELLM_MODEL_NAME)
+    graph_result = run_agent_workflow(details, target_company_name, LITELLM_MODEL_NAME)
+
+    # Prepare the main part of the result, excluding log for now
+    # final_blueprint_data = graph_result.get('blueprint', {}) # This is already under 'result' in the new structure
+    # current_status = 'completed_langgraph_blueprint' if 'error' not in graph_result else 'failed_langgraph_blueprint'
+
+    # Determine status based on presence of 'error' key in graph_result
+    # The 'status_message' from graph_result can also be used for more detailed status.
+    current_status = graph_result.get('status_message', 'Task completed') # Default to this
+    if 'error' in graph_result and graph_result['error']:
+        current_status = graph_result.get('status_message', f"Task failed: {graph_result['error']}")
+
 
     result_message = {
         'task_id': task_id,
-        'status': 'completed_langgraph_blueprint' if 'error' not in blueprint_result else 'failed_langgraph_blueprint',
+        'status': current_status, # Use the status from graph_result or a derived one
         'result': {
-            **blueprint_result,
-            'model_used': LITELLM_MODEL_NAME
+            # Spread other keys from graph_result like 'blueprint', 'validation_result', 'workflow_steps', 'error' etc.
+            # but be careful not to overwrite 'execution_log' if it's also a top-level key in graph_result
         },
         'target_company_name': target_company_name
     }
+
+    # Populate result_message['result'] carefully
+    # Keys to exclude from direct spreading if they are handled differently or part of 'result.blueprint'
+    excluded_keys_from_graph_result = {'workflow_execution_log'} # 'status_message' is used for top-level status
+
+    for key, value in graph_result.items():
+        if key not in excluded_keys_from_graph_result:
+            result_message['result'][key] = value
+
+    result_message['result']['model_used'] = LITELLM_MODEL_NAME # Add model_name
+
+    # Process and add execution_log
+    workflow_log_list = graph_result.get('workflow_execution_log', [])
+    execution_log_str = "\n".join(map(str, workflow_log_list))
+    result_message['result']['execution_log'] = execution_log_str
+
 
     # Ensure 'task_id' is available in this scope, or extract from result_message if necessary
     # Assuming task_id was part of the initial message or derived earlier in the callback

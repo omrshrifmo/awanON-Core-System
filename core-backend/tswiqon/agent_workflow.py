@@ -24,12 +24,15 @@ class AgentState(TypedDict):
     validation_result: Dict[str, Any]
     error: str # For capturing processing errors
     is_blueprint_request: Optional[bool] = True # New field for task type
+    workflow_execution_log: Optional[list[str]] # New field for detailed execution logging
 
 def analyze_task(state: AgentState) -> dict: # Return type changed to dict
     """Step 1: Analyze the task requirements and extract key information, determine task type"""
-    logging.info(f"NODE: Starting analyze_task. Task details (first 200 chars): {str(state.get('task_details'))[:200]}...")
+    log_entry = f"[INFO] NODE: Starting analyze_task. Task details (first 200 chars): {str(state.get('task_details'))[:200]}..."
+    logging.info(log_entry.split("] ", 1)[1])
+    state['workflow_execution_log'].append(log_entry)
     
-    system_prompt_task_analysis = ( # Renamed for clarity in logging
+    system_prompt_task_analysis = (
         "You are a business analysis AI. Analyze the given task and extract key business requirements. "
         "Respond with a JSON object containing: "
         "- business_domain: string (the main business domain) "
@@ -47,7 +50,9 @@ def analyze_task(state: AgentState) -> dict: # Return type changed to dict
     
     analysis_output = {}
     try:
-        logging.info(f"analyze_task: Sending prompt to LLM (snippet): {system_prompt_task_analysis[:100]}... User input (snippet): {state.get('task_details')[:100]}...")
+        log_entry = f"[INFO] analyze_task: Sending prompt to LLM (snippet): {system_prompt_task_analysis[:100]}... User input (snippet): {state.get('task_details')[:100]}..."
+        logging.info(log_entry.split("] ", 1)[1])
+        state['workflow_execution_log'].append(log_entry)
         response = completion(
             model=state['model_name'],
             messages=messages,
@@ -55,7 +60,9 @@ def analyze_task(state: AgentState) -> dict: # Return type changed to dict
         )
         
         llm_response_str = response.choices[0].message.content
-        logging.debug(f"analyze_task: Raw LLM response: {llm_response_str}")
+        log_entry = f"[DEBUG] analyze_task: Raw LLM response: {llm_response_str}"
+        logging.debug(log_entry.split("] ", 1)[1])
+        state['workflow_execution_log'].append(log_entry)
         response_json = json.loads(llm_response_str)
 
         analysis_result = {key: response_json[key] for key in response_json if key != 'is_blueprint_task'}
@@ -69,23 +76,34 @@ def analyze_task(state: AgentState) -> dict: # Return type changed to dict
         }
         
     except Exception as e:
-        logging.error(f"Error in analyze_task: {e}", exc_info=True) # Added exc_info
+        log_entry = f"[ERROR] Error in analyze_task: {e}"
+        logging.error(log_entry.split("] ", 1)[1], exc_info=True)
+        state['workflow_execution_log'].append(log_entry)
         analysis_output = {
             "error": f"Analysis failed: {str(e)}",
             "analysis_result": {},
             "is_blueprint_request": True
         }
 
-    logging.info(f"NODE: Finished analyze_task. Analysis result (snippet): {str(analysis_output.get('analysis_result'))[:100]}... Is blueprint request: {analysis_output.get('is_blueprint_request')}")
+    log_entry = f"[INFO] NODE: Finished analyze_task. Analysis result (snippet): {str(analysis_output.get('analysis_result'))[:100]}... Is blueprint request: {analysis_output.get('is_blueprint_request')}"
+    logging.info(log_entry.split("] ", 1)[1])
+    state['workflow_execution_log'].append(log_entry)
+    # The state itself is modified if 'workflow_execution_log' was passed by reference (which it is for TypedDicts in LangGraph)
+    # So, analysis_output doesn't strictly need to include workflow_execution_log, but it's safer to ensure it's part of the merge.
+    analysis_output['workflow_execution_log'] = state['workflow_execution_log']
     return analysis_output
 
 def research_industry(state: AgentState) -> AgentState:
     """Step 2: Research industry context using RAG from knowledge base"""
-    logging.info(f"NODE: Starting research_industry. Using analysis: {str(state.get('analysis_result'))[:100]}...")
+    log_entry = f"[INFO] NODE: Starting research_industry. Using analysis: {str(state.get('analysis_result'))[:100]}..."
+    logging.info(log_entry.split("] ", 1)[1])
+    state['workflow_execution_log'].append(log_entry)
     
     if state.get('error'):
-        logging.warning("research_industry: Skipping due to previous error in state.")
-        return state # type: ignore # state is AgentState, but mypy might complain due to TypedDict specifics
+        log_entry = "[WARN] research_industry: Skipping due to previous error in state."
+        logging.warning(log_entry.split("] ", 1)[1])
+        state['workflow_execution_log'].append(log_entry)
+        return state # type: ignore
         
     analysis = state.get('analysis_result', {})
     business_domain = analysis.get('business_domain', 'AI services')
@@ -97,9 +115,13 @@ def research_industry(state: AgentState) -> AgentState:
     research_findings_str = "" # For logging at the end
     try:
         # Query the vector store for relevant documents
-        logging.info(f"research_industry: Querying vector store with: {search_query}")
+        log_entry = f"[INFO] research_industry: Querying vector store with: {search_query}"
+        logging.info(log_entry.split("] ", 1)[1])
+        state['workflow_execution_log'].append(log_entry)
         retrieved_docs = query_vector_store(search_query, k=3)
-        logging.info(f"research_industry: Retrieved {len(retrieved_docs)} documents from vector store. First doc (snippet): {str(retrieved_docs[0])[:100] if retrieved_docs else 'N/A'}")
+        log_entry = f"[INFO] research_industry: Retrieved {len(retrieved_docs)} documents from vector store. First doc (snippet): {str(retrieved_docs[0])[:100] if retrieved_docs else 'N/A'}"
+        logging.info(log_entry.split("] ", 1)[1])
+        state['workflow_execution_log'].append(log_entry)
         
         if retrieved_docs and not any("Error:" in doc for doc in retrieved_docs):
             # Join retrieved documents into a single context string
@@ -109,8 +131,12 @@ def research_industry(state: AgentState) -> AgentState:
             
             # Log summary of retrieved context
             total_chars = len(research_findings)
-            logging.info(f"Retrieved {len(retrieved_docs)} documents with {total_chars} characters total")
-            logging.info(f"Research findings preview: {research_findings[:200]}...")
+            log_entry = f"[INFO] Retrieved {len(retrieved_docs)} documents with {total_chars} characters total"
+            logging.info(log_entry.split("] ", 1)[1])
+            state['workflow_execution_log'].append(log_entry)
+            log_entry = f"[INFO] Research findings preview: {research_findings[:200]}..."
+            logging.info(log_entry.split("] ", 1)[1])
+            state['workflow_execution_log'].append(log_entry)
             
             # Create a structured research context for backward compatibility
             state['research_context'] = {
@@ -127,7 +153,9 @@ def research_industry(state: AgentState) -> AgentState:
             if retrieved_docs and any("Error:" in doc for doc in retrieved_docs):
                 error_msg = retrieved_docs[0]  # Use the error message
             
-            logging.warning(f"RAG retrieval issue: {error_msg}")
+            log_entry = f"[WARN] RAG retrieval issue: {error_msg}"
+            logging.warning(log_entry.split("] ", 1)[1])
+            state['workflow_execution_log'].append(log_entry)
             state['research_findings'] = f"RAG retrieval note: {error_msg}"
             research_findings_str = state['research_findings'] # For logging
             state['research_context'] = {
@@ -136,13 +164,19 @@ def research_industry(state: AgentState) -> AgentState:
                 "search_query": search_query
             }
         
-        logging.info("RAG-based research completed")
+        log_entry = "[INFO] RAG-based research completed"
+        logging.info(log_entry.split("] ", 1)[1])
+        state['workflow_execution_log'].append(log_entry)
         
     except Exception as e:
-        logging.error(f"Error in RAG research: {e}", exc_info=True) # Added exc_info
+        log_entry = f"[ERROR] Error in RAG research: {e}"
+        logging.error(log_entry.split("] ", 1)[1], exc_info=True)
+        state['workflow_execution_log'].append(log_entry)
         state['error'] = f"RAG research failed: {str(e)}"
 
-    logging.info(f"NODE: Finished research_industry. Research findings (first 100 chars): {research_findings_str[:100]}...")
+    log_entry = f"[INFO] NODE: Finished research_industry. Research findings (first 100 chars): {research_findings_str[:100]}..."
+    logging.info(log_entry.split("] ", 1)[1])
+    state['workflow_execution_log'].append(log_entry)
     return state # type: ignore
 
 def generate_blueprint(state: AgentState) -> dict:
@@ -479,15 +513,15 @@ def create_workflow(model_name: str) -> StateGraph:
     def should_proceed_to_research(state: AgentState) -> str:
         is_blueprint = state.get('is_blueprint_request', True)
 
-        if state.get('error'): # If analysis itself failed and set an error
-             logging.warning(f"Conditional routing: Error detected in analysis_result: '{state.get('error')}'. Routing to handle_unsupported_task to ensure error is surfaced.")
-             # Even if is_blueprint_request was True by default on error, route to handle_unsupported_task if error exists.
-             # handle_unsupported_task can then decide if it's a blueprint error or a general analysis error.
-             # Or, could route to a generic error_handler node.
-             # For now, if analysis produces an error, it means we can't be sure it's a blueprint request.
-             return "handle_unsupported_task" # Or a new dedicated "handle_analysis_error" node
+        if state.get('error'):
+             log_entry = f"[WARN] Conditional routing: Error detected in analysis_result: '{state.get('error')}'. Routing to handle_unsupported_task to ensure error is surfaced."
+             logging.warning(log_entry.split("] ", 1)[1])
+             state['workflow_execution_log'].append(log_entry)
+             return "handle_unsupported_task"
 
-        logging.info(f"Conditional routing: is_blueprint_request = {is_blueprint}")
+        log_entry = f"[INFO] Conditional routing: is_blueprint_request = {is_blueprint}"
+        logging.info(log_entry.split("] ", 1)[1])
+        state['workflow_execution_log'].append(log_entry)
         if is_blueprint:
             return "research_industry"
         else:
@@ -540,41 +574,62 @@ def handle_unsupported_task_node(state: AgentState) -> dict:
 def run_agent_workflow(task_details: str, target_company_name: str, model_name: str) -> Dict[str, Any]:
     """Run the complete LangGraph workflow"""
     logging.info(f"NODE: Starting run_agent_workflow for: {target_company_name}. Task (first 100 chars): {str(task_details)[:100]}...")
-    
+    # workflow_execution_log is initialized here
+    initial_workflow_log = [f"[INFO] NODE: Starting run_agent_workflow for: {target_company_name}. Task (first 100 chars): {str(task_details)[:100]}..."]
+
     # Create workflow
     app = create_workflow(model_name)
     
     # Initial state
-    initial_state = {
-        "task_details": task_details,
-        "target_company_name": target_company_name,
-        "model_name": model_name,
-        "analysis_result": {},
-        "research_context": {},
-        "research_findings": None,
-        "blueprint_draft": {},
-        "refined_blueprint": {},
-        "final_blueprint": {},
-        "validation_result": {},
-        "error": ""
-    }
+    initial_state = AgentState(
+        task_details=task_details,
+        target_company_name=target_company_name,
+        model_name=model_name,
+        analysis_result={},
+        research_context={},
+        research_findings=None,
+        blueprint_draft={},
+        refined_blueprint={},
+        final_blueprint={},
+        validation_result={},
+        error="",
+        is_blueprint_request=True, # Default, can be overridden by analyze_task
+        workflow_execution_log=initial_workflow_log # Initialize with the first log entry
+    )
     
+    current_execution_log = initial_workflow_log # Use this to pass to app.invoke if needed, or rely on state modification by nodes
+
     try:
         # Run the workflow
-        logging.info("Invoking agent workflow...")
+        log_entry = "[INFO] Invoking agent workflow..."
+        logging.info(log_entry.split("] ", 1)[1]) # Log without prefix for console
+        current_execution_log.append(log_entry)
+
         final_state = app.invoke(initial_state)
-        logging.info("Agent workflow invocation complete.")
+        # After invoke, final_state['workflow_execution_log'] will have all appended logs if nodes modify it correctly.
+        # For safety, assign it back to current_execution_log if it exists, otherwise keep what we have.
+        current_execution_log = final_state.get('workflow_execution_log', current_execution_log)
+
+
+        log_entry = "[INFO] Agent workflow invocation complete."
+        logging.info(log_entry.split("] ", 1)[1])
+        current_execution_log.append(log_entry)
+
 
         if final_state.get('error'):
-            logging.error(f"NODE: Workflow completed with error for Task ID (if available from state, else N/A). Error: {final_state['error']}")
-            # Attempt to get task_id from state if it was added, otherwise it won't be available here
-            # For now, task_id is not part of AgentState, so cannot log it here directly from final_state
+            log_entry = f"[ERROR] NODE: Workflow completed with error. Error: {final_state['error']}"
+            logging.error(log_entry.split("] ", 1)[1])
+            current_execution_log.append(log_entry)
+
+            # Ensure the log is part of the returned state
+            final_state['workflow_execution_log'] = current_execution_log
             return {
                 "error": final_state['error'],
                 "status_message": final_state.get('status_message', final_state['error']),
                 "blueprint": final_state.get('final_blueprint', {}),
                 "workflow_type": "langgraph_multi_step",
                 "validation_result": final_state.get('validation_result', {}),
+                "workflow_execution_log": current_execution_log, # Ensure log is returned
                 "partial_results": {
                     "analysis": final_state.get('analysis_result', {}),
                     "research": final_state.get('research_context', {}),
@@ -583,12 +638,18 @@ def run_agent_workflow(task_details: str, target_company_name: str, model_name: 
                 }
             }
         
-        logging.info(f"NODE: Workflow completed successfully for {target_company_name}. Final blueprint (first 200 chars): {str(final_state.get('final_blueprint'))[:200]}...")
+        log_entry = f"[INFO] NODE: Workflow completed successfully for {target_company_name}. Final blueprint (first 200 chars): {str(final_state.get('final_blueprint'))[:200]}..."
+        logging.info(log_entry.split("] ", 1)[1])
+        current_execution_log.append(log_entry)
+
+        # Ensure the log is part of the returned state
+        final_state['workflow_execution_log'] = current_execution_log
         return {
             "blueprint": final_state.get('final_blueprint', {}),
             "workflow_type": "langgraph_multi_step",
             "validation_result": final_state.get('validation_result', {}),
             "status_message": final_state.get('status_message', "Task completed successfully."),
+            "workflow_execution_log": current_execution_log, # Ensure log is returned
             "workflow_steps": {
                 "analysis": final_state.get('analysis_result', {}),
                 "research": final_state.get('research_context', {}),
