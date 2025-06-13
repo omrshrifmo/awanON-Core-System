@@ -139,7 +139,7 @@ BRIDGE_SERVICE_URL=$(gcloud run services describe "${BRIDGE_SERVICE_NAME}" --pla
 echo "✅ ${BRIDGE_SERVICE_NAME} deployed. URL: ${BRIDGE_SERVICE_URL}"
 
 echo "INFO: Deploying ${TSWIQON_AGENT_SERVICE_NAME} from image ${TSWIQON_AGENT_IMAGE_TAG}..."
-gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" --image "${TSWIQON_AGENT_IMAGE_TAG}" --platform managed --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --set-env-vars="RABBITMQ_URL=${CLOUDAMQP_URL},GROQ_API_KEY=${GROQ_API_KEY},LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME}" --port=8080 --memory=4Gi --cpu=2 --min-instances=0 --max-instances=1 --execution-environment=gen2 --startup-probe=httpGet.path=/healthz,timeoutSeconds=600 --no-cpu-throttling --allow-unauthenticated --quiet
+gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" --image "${TSWIQON_AGENT_IMAGE_TAG}" --platform managed --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --set-env-vars="RABBITMQ_URL=${CLOUDAMQP_URL},GROQ_API_KEY=${GROQ_API_KEY},LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME}" --port=8080 --memory=4Gi --cpu=2 --min-instances=0 --max-instances=1 --execution-environment=gen2 --startup-probe='httpGet={"path": "/healthz"},timeoutSeconds=600' --no-cpu-throttling --allow-unauthenticated --quiet
 echo "✅ ${TSWIQON_AGENT_SERVICE_NAME} deployed."
 
 # --- CLOUD RUN DEPLOYMENT - FRONTEND SERVICE (RE-BUILD, RE-PUSH, DEPLOY) ---
