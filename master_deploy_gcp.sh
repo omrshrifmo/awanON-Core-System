@@ -152,7 +152,9 @@ gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" \
   --execution-environment=gen2 \
   --no-cpu-throttling \
   --allow-unauthenticated \
-  --quiet
+  --quiet \
+  --health-check-type=http --health-check-path=/healthz
+
 echo "✅ ${TSWIQON_AGENT_SERVICE_NAME} deployed."
 
 # --- CLOUD RUN DEPLOYMENT - FRONTEND SERVICE (RE-BUILD, RE-PUSH, DEPLOY) ---
