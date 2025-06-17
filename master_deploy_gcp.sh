@@ -151,7 +151,7 @@ gcloud run deploy "${TSWIQON_AGENT_SERVICE_NAME}" \
   --min-instances=0 \
   --max-instances=1 \
   --execution-environment=gen2 \
-  --startup-probe=httpGet.path=/healthz,timeoutSeconds=600,tcpSocket.port=8081 \
+  --startup-probe=httpGet.path=/healthz,httpGet.port=8081,timeoutSeconds=600 \
   --no-cpu-throttling \
   --allow-unauthenticated \
   --quiet
